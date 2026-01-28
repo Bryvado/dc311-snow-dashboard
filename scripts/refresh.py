@@ -54,7 +54,7 @@ def fetch_all_features() -> List[Dict[str, Any]]:
     while True:
         data = _arcgis_query_page(offset)
         feats = data.get("features", []) or []
-        if not feats:
+        if len(feats) == 0:
             break
 
         all_feats.extend(feats)
@@ -87,10 +87,9 @@ def load_polygons(path: Path, id_field: str) -> Dict[str, Any]:
 def assign_ids(points: List[Optional[Point]], polys: List[Any], ids: List[str]) -> List[Optional[str]]:
     """
     Assign polygon id to each point using STRtree + covers().
-    Works across shapely STRtree variants.
+    Handles STRtree.query returning numpy arrays or geometries across shapely builds.
     """
     tree = STRtree(polys)
-    # Map polygon geometry (WKB) -> index for shapely versions where query returns geometries
     wkb_to_idx = {polys[i].wkb: i for i in range(len(polys))}
 
     out: List[Optional[str]] = []
@@ -104,7 +103,6 @@ def assign_ids(points: List[Optional[Point]], polys: List[Any], ids: List[str]) 
             out.append(None)
             continue
 
-        # hits might be indices or geometries depending on shapely build
         if isinstance(hits[0], (int, np.integer)):
             cand_idxs = [int(i) for i in hits]
         else:
@@ -116,7 +114,7 @@ def assign_ids(points: List[Optional[Point]], polys: List[Any], ids: List[str]) 
 
         found = None
         for i in cand_idxs:
-            if polys[i].covers(pt):  # covers includes boundary
+            if polys[i].covers(pt):
                 found = ids[i]
                 break
 
@@ -193,10 +191,8 @@ def summarize_group(g: pd.DataFrame) -> Dict[str, Any]:
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 1) Fetch ArcGIS points
     feats = fetch_all_features()
 
-    # 2) Flatten to records + points
     rows = []
     points: List[Optional[Point]] = []
 
@@ -224,7 +220,6 @@ def main() -> None:
 
     df = pd.DataFrame(rows)
 
-    # 3) Parse times
     df["add_dt"] = parse_dt_series(df.get("ADDDATE"))
     df["res_dt"] = parse_dt_series(df.get("RESOLUTIONDATE"))
 
@@ -244,7 +239,6 @@ def main() -> None:
     )
     df.loc[df["ttc_hours"] < 0, "ttc_hours"] = np.nan
 
-    # 4) Spatial assign: ANC + Ward
     if not ANC_PATH.exists():
         raise FileNotFoundError(f"Missing {ANC_PATH}. Put your ANC GeoJSON at data/anc.geojson")
     if not WARDS_PATH.exists():
@@ -256,7 +250,55 @@ def main() -> None:
     df["ANC_ID"] = assign_ids(points, anc["polys"], anc["ids"])
     df["WARD_POLY"] = assign_ids(points, wards["polys"], wards["ids"])
 
-    # 5) Aggregate
+    # --------
+    # Write POINTS GeoJSON (minimal properties for browser filtering)
+    # --------
+    def to_ms(ts) -> Optional[int]:
+        if ts is pd.NaT or pd.isna(ts):
+            return None
+        # store as UTC epoch ms for easy JS slider comparisons
+        return int(ts.tz_convert("UTC").timestamp() * 1000)
+
+    features = []
+    for i, row in df.iterrows():
+        lon = row.get("_lon")
+        lat = row.get("_lat")
+        if pd.isna(lon) or pd.isna(lat):
+            continue
+
+        add_ms = to_ms(row.get("add_dt"))
+        res_ms = to_ms(row.get("res_dt"))
+
+        # Keep properties small; avoid DETAILS (can be huge)
+        props = {
+            "OBJECTID": int(row["OBJECTID"]) if not pd.isna(row.get("OBJECTID")) else None,
+            "SERVICEREQUESTID": row.get("SERVICEREQUESTID"),
+            "SERVICECODEDESCRIPTION": row.get("SERVICECODEDESCRIPTION"),
+            "SERVICEORDERSTATUS": row.get("SERVICEORDERSTATUS"),
+            "STREETADDRESS": row.get("STREETADDRESS"),
+            "WARD": None if pd.isna(row.get("WARD_POLY")) else str(row.get("WARD_POLY")),
+            "ANC_ID": None if pd.isna(row.get("ANC_ID")) else str(row.get("ANC_ID")),
+            "closed": bool(row.get("closed")) if not pd.isna(row.get("closed")) else None,
+            "add_ms": add_ms,
+            "res_ms": res_ms,
+            "ttc_hours": None if pd.isna(row.get("ttc_hours")) else float(row.get("ttc_hours")),
+            "open_age_hours": None if pd.isna(row.get("open_age_hours")) else float(row.get("open_age_hours")),
+        }
+
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [float(lon), float(lat)]},
+                "properties": props,
+            }
+        )
+
+    points_geojson = {"type": "FeatureCollection", "features": features}
+    (OUT_DIR / "points.geojson").write_text(json.dumps(points_geojson), encoding="utf-8")
+
+    # --------
+    # Aggregates (full 30 days)
+    # --------
     metrics_ward = []
     for ward_key, g in df.groupby("WARD_POLY", dropna=False):
         k = None if pd.isna(ward_key) else str(ward_key)
@@ -269,11 +311,9 @@ def main() -> None:
         metrics_anc.append({"ANC_ID": k, **summarize_group(g)})
     metrics_anc_df = pd.DataFrame(metrics_anc).sort_values("total", ascending=False)
 
-    # 6) Write metrics JSON
     (OUT_DIR / "metrics_ward.json").write_text(metrics_ward_df.to_json(orient="records"), encoding="utf-8")
     (OUT_DIR / "metrics_anc.json").write_text(metrics_anc_df.to_json(orient="records"), encoding="utf-8")
 
-    # 7) Choropleths (polygons with metrics merged into properties)
     ward_metric_map = {
         str(r["WARD"]): {c: (None if pd.isna(r[c]) else r[c]) for c in metrics_ward_df.columns if c != "WARD"}
         for _, r in metrics_ward_df.iterrows()
@@ -291,7 +331,6 @@ def main() -> None:
     (OUT_DIR / "choropleth_wards.geojson").write_text(json.dumps(wards_choro), encoding="utf-8")
     (OUT_DIR / "choropleth_ancs.geojson").write_text(json.dumps(ancs_choro), encoding="utf-8")
 
-    # 8) last_refresh + metadata
     (OUT_DIR / "last_refresh.json").write_text(
         json.dumps(
             {
@@ -300,6 +339,7 @@ def main() -> None:
                 "layer_url": LAYER_URL,
                 "records": int(len(df)),
                 "generated_files": [
+                    "points.geojson",
                     "metrics_ward.json",
                     "metrics_anc.json",
                     "choropleth_wards.geojson",
@@ -312,7 +352,7 @@ def main() -> None:
         encoding="utf-8",
     )
 
-    print(f"Fetched {len(df)} records and wrote outputs to {OUT_DIR}")
+    print(f"Fetched {len(df)} records; wrote points + metrics to {OUT_DIR}")
 
 
 if __name__ == "__main__":
