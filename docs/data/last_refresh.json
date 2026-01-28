@@ -1,4 +1,13 @@
 {
   "ok": true,
-  "last_refresh_utc": "2026-01-28T00:27:27.009186+00:00"
+  "last_refresh_utc": "2026-01-28T00:43:32.112957+00:00",
+  "layer_url": "https://maps2.dcgis.dc.gov/dcgis/rest/services/DCGIS_APPS/SR_30days_Open/MapServer/17",
+  "records": 3033,
+  "generated_files": [
+    "metrics_ward.json",
+    "metrics_anc.json",
+    "choropleth_wards.geojson",
+    "choropleth_ancs.geojson",
+    "last_refresh.json"
+  ]
 }
