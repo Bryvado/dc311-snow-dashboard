@@ -5,8 +5,8 @@ on:
   push:
     branches: [ "main" ]
   # add this later once you're ready for automatic refresh
-  # schedule:
-  #   - cron: "*/5 * * * *"
+   schedule:
+     - cron: "*/5 * * * *"
 
 permissions:
   contents: write
