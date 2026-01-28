@@ -1,0 +1,14 @@
+<!doctype html>
+<html>
+  <head><meta charset="utf-8"><title>DC311 Snow Dashboard</title></head>
+  <body>
+    <h1>DC311 Snow Dashboard</h1>
+    <pre id="out">Loading…</pre>
+    <script>
+      fetch("./data/last_refresh.json")
+        .then(r => r.json())
+        .then(j => document.getElementById("out").textContent = JSON.stringify(j, null, 2))
+        .catch(e => document.getElementById("out").textContent = "Missing data/last_refresh.json");
+    </script>
+  </body>
+</html>
