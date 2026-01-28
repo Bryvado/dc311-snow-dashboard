@@ -1,14 +1,125 @@
 <!doctype html>
 <html>
-  <head><meta charset="utf-8"><title>DC311 Snow Dashboard</title></head>
-  <body>
-    <h1>DC311 Snow Dashboard</h1>
-    <pre id="out">Loading…</pre>
-    <script>
-      fetch("./data/last_refresh.json")
-        .then(r => r.json())
-        .then(j => document.getElementById("out").textContent = JSON.stringify(j, null, 2))
-        .catch(e => document.getElementById("out").textContent = "Missing data/last_refresh.json");
-    </script>
-  </body>
+<head>
+  <meta charset="utf-8" />
+  <title>DC311 Snow Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; }
+    h1 { margin: 0 0 10px; }
+    .meta { color: #444; margin-bottom: 16px; }
+    select { padding: 6px 8px; margin-left: 8px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 14px; }
+    th, td { border-bottom: 1px solid #eee; padding: 8px 10px; text-align: left; font-size: 14px; }
+    th { background: #fafafa; position: sticky; top: 0; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .small { font-size: 13px; color: #666; }
+  </style>
+</head>
+<body>
+  <h1>DC311 Snow Dashboard</h1>
+
+  <div class="meta">
+    <span id="refresh">Loading…</span>
+    <span class="small"> | Source: DC GIS ArcGIS layer</span>
+    <label style="float:right;">
+      View:
+      <select id="view">
+        <option value="ward">Ward</option>
+        <option value="anc">ANC</option>
+      </select>
+    </label>
+  </div>
+
+  <div id="counts" class="small"></div>
+
+  <table id="tbl">
+    <thead>
+      <tr id="hdr"></tr>
+    </thead>
+    <tbody id="body"></tbody>
+  </table>
+
+  <script>
+    const fmtInt = (x) => (x === null || x === undefined) ? "—" : Number(x).toLocaleString();
+    const fmtPct = (x) => (x === null || x === undefined) ? "—" : (Number(x) * 100).toFixed(1) + "%";
+    const fmtHrs = (x) => (x === null || x === undefined) ? "—" : Number(x).toFixed(1);
+
+    async function loadRefresh() {
+      const j = await fetch("./data/last_refresh.json").then(r => r.json());
+      document.getElementById("refresh").textContent =
+        `Last refresh (UTC): ${j.last_refresh_utc} — Records: ${fmtInt(j.records)}`;
+      return j;
+    }
+
+    function setHeader(kind) {
+      const hdr = document.getElementById("hdr");
+      hdr.innerHTML = "";
+      const cols = kind === "ward"
+        ? ["Ward", "Total", "Open", "Closed", "% Closed", "Median time-to-close (hrs)", "Mean time-to-close (hrs)", "Median open age (hrs)"]
+        : ["ANC", "Total", "Open", "Closed", "% Closed", "Median time-to-close (hrs)", "Mean time-to-close (hrs)", "Median open age (hrs)"];
+      cols.forEach((c, i) => {
+        const th = document.createElement("th");
+        th.textContent = c;
+        if (i > 0) th.className = "num";
+        hdr.appendChild(th);
+      });
+    }
+
+    function rowFor(kind, r) {
+      const key = (kind === "ward") ? (r.WARD ?? "—") : (r.ANC_ID ?? "—");
+      return [
+        {v: key, cls: ""},
+        {v: fmtInt(r.total), cls: "num"},
+        {v: fmtInt(r.open), cls: "num"},
+        {v: fmtInt(r.closed), cls: "num"},
+        {v: fmtPct(r.pct_closed), cls: "num"},
+        {v: fmtHrs(r.median_ttc_hours), cls: "num"},
+        {v: fmtHrs(r.mean_ttc_hours), cls: "num"},
+        {v: fmtHrs(r.median_open_age_hours), cls: "num"},
+      ];
+    }
+
+    async function loadTable(kind) {
+      setHeader(kind);
+
+      const url = kind === "ward" ? "./data/metrics_ward.json" : "./data/metrics_anc.json";
+      const data = await fetch(url).then(r => r.json());
+
+      // Sort by total desc (should already be, but just in case)
+      data.sort((a,b) => (b.total ?? 0) - (a.total ?? 0));
+
+      const tbody = document.getElementById("body");
+      tbody.innerHTML = "";
+
+      for (const r of data) {
+        const tr = document.createElement("tr");
+        for (const cell of rowFor(kind, r)) {
+          const td = document.createElement("td");
+          td.textContent = cell.v;
+          td.className = cell.cls;
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+
+      const totals = data.reduce((acc, r) => {
+        acc.total += (r.total ?? 0);
+        acc.open += (r.open ?? 0);
+        acc.closed += (r.closed ?? 0);
+        return acc;
+      }, {total:0, open:0, closed:0});
+
+      document.getElementById("counts").textContent =
+        `Aggregated from output file: total ${fmtInt(totals.total)} • open ${fmtInt(totals.open)} • closed ${fmtInt(totals.closed)}`;
+    }
+
+    (async () => {
+      await loadRefresh();
+      const sel = document.getElementById("view");
+      await loadTable(sel.value);
+      sel.addEventListener("change", () => loadTable(sel.value));
+    })();
+  </script>
+</body>
 </html>
