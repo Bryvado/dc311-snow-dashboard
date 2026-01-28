@@ -304,8 +304,8 @@ def main() -> None:
         "WARD": clean_str(row.get("WARD")),
         "ANC_ID": clean_str(row.get("ANC_ID")),
         "closed": clean_bool(row.get("closed")),
-        "add_ms": int(row["add_ms"]) if not pd.isna(row["add_ms"]) else None,
-        "res_ms": int(row["res_ms"]) if not pd.isna(row["res_ms"]) else None,
+        "add_ms": add_ms,
+        "res_ms": res_ms,,
         "ttc_hours": clean_float(row.get("ttc_hours")),
         "open_age_hours": clean_float(row.get("open_age_hours")),
     }
@@ -319,13 +319,17 @@ def main() -> None:
         )
 
     points_geojson = {"type": "FeatureCollection", "features": features}
-    (out / "points.geojson").write_text(json.dumps(points_geojson, ensure_ascii=False, allow_nan=False))
+    (OUT_DIR / "points.geojson").write_text(
+    json.dumps(points_geojson, ensure_ascii=False, allow_nan=False),
+    encoding="utf-8",
+)
+
 
     # --------
     # Aggregates (full 30 days)
     # --------
     metrics_ward = []
-    for ward_key, g in df.groupby("WARD_POLY", dropna=False):
+    for ward_key, g in df.groupby("WARD", dropna=False):
         k = None if pd.isna(ward_key) else str(ward_key)
         metrics_ward.append({"WARD": k, **summarize_group(g)})
     metrics_ward_df = pd.DataFrame(metrics_ward).sort_values("total", ascending=False)
