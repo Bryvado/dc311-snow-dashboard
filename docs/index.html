@@ -9,7 +9,7 @@
     body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
     header { padding: 12px 14px; border-bottom: 1px solid #eee; background: #fff; }
     h1 { font-size: 20px; margin: 0 0 6px; }
-    #map { height: calc(100vh - 255px); }
+    #map { height: calc(100vh - 215px); }
 
     .row { display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
     .small { font-size: 13px; color:#555; }
@@ -18,12 +18,16 @@
     input[type="range"] { width: 240px; }
 
     .pill { padding: 2px 8px; border: 1px solid #ddd; border-radius: 999px; font-size: 12px; color:#333; background:#fafafa; }
-    .legendBox { background:#fff; padding:8px 10px; border:1px solid #ddd; border-radius:10px; font-size:12px; }
-    .legendTitle { font-weight: 700; margin-bottom: 4px; }
-    .legendSection { margin-top: 8px; }
+    .btn { cursor:pointer; user-select:none; }
+    .err { color:#b00020; font-weight: 600; }
+
+    details.legend { border: 1px solid #ddd; border-radius: 10px; padding: 6px 10px; background:#fff; }
+    details.legend > summary { cursor: pointer; font-size: 12px; font-weight: 700; }
+    .legendGrid { display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-top:8px; }
+    .legendSectionTitle { font-weight:700; margin-bottom:4px; font-size:12px; }
+    .muted { color:#666; font-size:12px; }
     .swatch { display:inline-block; width:12px; height:12px; vertical-align:middle; margin-right:6px; border:1px solid #bbb; }
-    .legendRow { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-    .muted { color:#666; }
+    .legendRow { display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:12px; }
   </style>
 </head>
 <body>
@@ -40,38 +44,33 @@
         </select>
       </label>
 
-      <label>Metric:
-        <select id="metric">
-          <option value="median_ttc_hours" selected>Median time-to-close (hrs)</option>
-          <option value="mean_ttc_hours">Mean time-to-close (hrs)</option>
-          <option value="pct_closed">% closed</option>
-          <option value="open">Open count</option>
-          <option value="closed">Closed count</option>
-          <option value="total">Total requests</option>
-        </select>
-      </label>
-
-      <label>Status:
-        <select id="status">
+      <!-- NEW: scope first -->
+      <label>Requests:
+        <select id="scope">
           <option value="both" selected>Open + Resolved</option>
           <option value="open">Open only</option>
           <option value="resolved">Resolved only</option>
         </select>
       </label>
 
-      <!-- Choropleth on/off -->
+      <!-- Metric gets populated based on scope -->
+      <label>Metric:
+        <select id="metric"></select>
+      </label>
+
       <label class="pill">
         <input type="checkbox" id="showChoro" checked />
         Show choropleth
       </label>
 
-      <!-- Per-pop (only appears when it applies AND choropleth is on) -->
-      <span id="perPopWrap" class="pill" style="display:none;">
+      <span class="pill">
         <label style="cursor:pointer;">
           <input type="checkbox" id="perPop" />
           Per 10k residents
         </label>
       </span>
+
+      <span id="perPopErr" class="small err" style="display:none;"></span>
 
       <label class="pill">
         <input type="checkbox" id="showPoints" checked />
@@ -86,15 +85,23 @@
         <input type="range" id="start" />
         <span class="small" id="startLabel">—</span>
       </label>
+
       <label>To:
         <input type="range" id="end" />
         <span class="small" id="endLabel">—</span>
       </label>
+
+      <!-- NEW: Storm preset -->
+      <span class="pill btn" id="presetStorm">Storm preset (since Jan 24)</span>
+      <span class="pill btn" id="presetAll">Full range</span>
     </div>
 
-    <!-- Legends in the header (white space), not on the map -->
+    <!-- Compact legend (collapsed by default) -->
     <div class="row" style="margin-top:10px;">
-      <div id="legendBox" class="legendBox" style="width: 100%;"></div>
+      <details class="legend" id="legendDetails">
+        <summary>Legend (click to expand)</summary>
+        <div id="legendBody" class="legendGrid"></div>
+      </details>
     </div>
   </header>
 
@@ -150,23 +157,47 @@
     const PER_POP_METRICS = new Set(["open", "closed", "total"]);
     const TTC_METRICS = new Set(["median_ttc_hours", "mean_ttc_hours"]);
 
-    function metricSupportsPerPop(metric) {
-      return PER_POP_METRICS.has(metric);
-    }
-    function pointsUseTtcScale(metric) {
-      return TTC_METRICS.has(metric);
-    }
+    function metricSupportsPerPop(metric) { return PER_POP_METRICS.has(metric); }
+    function pointsUseTtcScale(metric) { return TTC_METRICS.has(metric); }
+
+    const METRICS = {
+      // both open + resolved in the filtered dataset
+      both: [
+        { value: "pct_closed", label: "% closed" },
+        { value: "median_ttc_hours", label: "Median time-to-close (hrs)" },
+        { value: "mean_ttc_hours", label: "Mean time-to-close (hrs)" },
+        { value: "open", label: "Open count" },
+        { value: "closed", label: "Closed count" },
+        { value: "total", label: "Total requests" },
+      ],
+      // open-only dataset
+      open: [
+        { value: "median_open_age_hours", label: "Median open age (hrs)" },
+        { value: "mean_open_age_hours", label: "Mean open age (hrs)" },
+        { value: "open", label: "Open count" },
+        { value: "total", label: "Total requests" },
+      ],
+      // resolved-only dataset
+      resolved: [
+        { value: "median_ttc_hours", label: "Median time-to-close (hrs)" },
+        { value: "mean_ttc_hours", label: "Mean time-to-close (hrs)" },
+        { value: "closed", label: "Closed count" },
+        { value: "total", label: "Total requests" },
+      ],
+    };
 
     function metricLabel(metric, perPopOn) {
-      const base = {
+      const map = {
+        pct_closed: "% closed",
         median_ttc_hours: "Median time-to-close (hrs)",
         mean_ttc_hours: "Mean time-to-close (hrs)",
-        pct_closed: "% closed",
+        median_open_age_hours: "Median open age (hrs)",
+        mean_open_age_hours: "Mean open age (hrs)",
         open: "Open count",
         closed: "Closed count",
         total: "Total requests",
-      }[metric] ?? metric;
-
+      };
+      const base = map[metric] ?? metric;
       if (perPopOn && metricSupportsPerPop(metric)) return `${base} (per 10k residents)`;
       return base;
     }
@@ -178,12 +209,12 @@
         pct_closed: () => isNum(m.pct_closed) ? (m.pct_closed * 100) : null,
         median_ttc_hours: () => m.median_ttc_hours,
         mean_ttc_hours: () => m.mean_ttc_hours,
+        median_open_age_hours: () => m.median_open_age_hours,
+        mean_open_age_hours: () => m.mean_open_age_hours,
       };
-
       if (derived[metric]) return derived[metric]();
 
-      // counts
-      const v = m[metric];
+      const v = m[metric]; // counts
       if (!perPopOn || !metricSupportsPerPop(metric)) return v;
 
       if (!isNum(v) || !isNum(pop) || pop <= 0) return null;
@@ -200,9 +231,12 @@
 
         let g = groups.get(k);
         if (!g) {
-          g = { total:0, open:0, closed:0, pct_closed:null,
-                median_ttc_hours:null, mean_ttc_hours:null, median_open_age_hours:null,
-                _ttc:[], _age:[] };
+          g = {
+            total:0, open:0, closed:0, pct_closed:null,
+            median_ttc_hours:null, mean_ttc_hours:null,
+            median_open_age_hours:null, mean_open_age_hours:null,
+            _ttc:[], _age:[]
+          };
           groups.set(k, g);
         }
 
@@ -223,6 +257,7 @@
         g.median_ttc_hours = median(g._ttc);
         g.mean_ttc_hours = mean(g._ttc);
         g.median_open_age_hours = median(g._age);
+        g.mean_open_age_hours = mean(g._age);
         delete g._ttc; delete g._age;
         out[String(k)] = g;
       }
@@ -241,7 +276,7 @@
     let allPointsFC = null;
     let wardsBase = null;
     let ancsBase = null;
-    let pops = null; // optional populations.json
+    let pops = null;
 
     let pointsLayer = null;
     let choroLayer = null;
@@ -250,18 +285,23 @@
     // UI elements
     // -------------------------
     const geoSel = document.getElementById("geo");
+    const scopeSel = document.getElementById("scope");
     const metricSel = document.getElementById("metric");
-    const statusSel = document.getElementById("status");
     const showChoro = document.getElementById("showChoro");
     const perPop = document.getElementById("perPop");
-    const perPopWrap = document.getElementById("perPopWrap");
+    const perPopErr = document.getElementById("perPopErr");
     const showPoints = document.getElementById("showPoints");
     const startSlider = document.getElementById("start");
     const endSlider = document.getElementById("end");
     const startLabel = document.getElementById("startLabel");
     const endLabel = document.getElementById("endLabel");
     const countPill = document.getElementById("countPill");
-    const legendBox = document.getElementById("legendBox");
+    const presetStorm = document.getElementById("presetStorm");
+    const presetAll = document.getElementById("presetAll");
+    const legendBody = document.getElementById("legendBody");
+
+    // Globals used by presets
+    let RANGE_MIN = null, RANGE_MAX = null, RANGE_STEP = 3600 * 1000;
 
     function setMeta(j) {
       document.getElementById("meta").textContent =
@@ -274,10 +314,34 @@
       if (a > b) endSlider.value = startSlider.value;
     }
 
+    function applyScope() {
+      // Populate metric options based on scope
+      const scope = scopeSel.value;
+      const options = METRICS[scope];
+
+      const current = metricSel.value;
+      metricSel.innerHTML = "";
+
+      for (const o of options) {
+        const opt = document.createElement("option");
+        opt.value = o.value;
+        opt.textContent = o.label;
+        metricSel.appendChild(opt);
+      }
+
+      // Try to keep current metric if still allowed
+      const stillOk = options.some(o => o.value === current);
+      metricSel.value = stillOk ? current : options[0].value;
+
+      // Clear per-pop error when scope changes
+      perPopErr.style.display = "none";
+      perPopErr.textContent = "";
+    }
+
     function filteredPoints() {
       const a = Number(startSlider.value);
       const b = Number(endSlider.value);
-      const mode = statusSel.value; // both | open | resolved
+      const scope = scopeSel.value; // both | open | resolved
 
       return allPointsFC.features.filter(f => {
         const p = f.properties || {};
@@ -285,42 +349,39 @@
         if (typeof t !== "number" || !isFinite(t) || t < a || t > b) return false;
 
         const isClosed = (p.closed === true);
-        if (mode === "open" && isClosed) return false;
-        if (mode === "resolved" && !isClosed) return false;
+        if (scope === "open" && isClosed) return false;
+        if (scope === "resolved" && !isClosed) return false;
 
         return true;
       });
     }
 
     // -------------------------
-    // UI sync (this is the “intuitive guardrail”)
+    // Per-pop validation (red error message)
     // -------------------------
-    function syncUI() {
+    function canUsePerPop() {
       const metric = metricSel.value;
+      const geoOk = showChoro.checked && geoSel.value !== "none";
+      return geoOk && metricSupportsPerPop(metric);
+    }
 
-      // Choropleth controls enabled only if choropleth is on
-      geoSel.disabled = !showChoro.checked;
+    function validatePerPopToggle() {
+      perPopErr.style.display = "none";
+      perPopErr.textContent = "";
 
-      // per-pop only makes sense for choropleth + counts + geo != none
-      const perPopOk =
-        showChoro.checked &&
-        geoSel.value !== "none" &&
-        metricSupportsPerPop(metric);
-
-      perPopWrap.style.display = perPopOk ? "" : "none";
-      if (!perPopOk && perPop.checked) perPop.checked = false;
+      if (perPop.checked && !canUsePerPop()) {
+        perPop.checked = false;
+        perPopErr.textContent = "Per 10k is only available for Open/Closed/Total counts with choropleth on.";
+        perPopErr.style.display = "";
+      }
     }
 
     // -------------------------
-    // Points layer (with auto coloring)
+    // Points layer (auto coloring)
     // -------------------------
     function updatePointLayer(feats, ttcMin, ttcMax) {
       if (pointsLayer) pointsLayer.remove();
-
-      if (!showPoints.checked) {
-        pointsLayer = null;
-        return;
-      }
+      if (!showPoints.checked) { pointsLayer = null; return; }
 
       const metric = metricSel.value;
       const useScale = pointsUseTtcScale(metric);
@@ -332,15 +393,13 @@
           const p = feature.properties || {};
           const closed = p.closed === true;
 
-          // Default status colors: open=red, resolved=blue
+          // Default: open=red, resolved=blue
           let fill = closed ? "#1f77b4" : "#d62728";
 
-          // When metric is median/mean ttc, color resolved points by their ttc_hours
+          // If metric is ttc, use blue->red scale for resolved points
           if (useScale && closed && isNum(p.ttc_hours) && isNum(ttcMin) && isNum(ttcMax) && ttcMax > ttcMin) {
-            const t = (p.ttc_hours - ttcMin) / (ttcMax - ttcMin);
-            fill = rbRamp(t);
+            fill = rbRamp((p.ttc_hours - ttcMin) / (ttcMax - ttcMin));
           } else if (useScale && !closed) {
-            // open requests don’t have ttc; keep them visible but muted
             fill = "#999999";
           }
 
@@ -363,7 +422,6 @@
           const anc = p.ANC_ID ?? "—";
           const addr = p.STREETADDRESS ?? "";
           const desc = p.SERVICECODEDESCRIPTION ?? "";
-
           const status = isClosed ? "Resolved" : "Open";
 
           const extra =
@@ -385,7 +443,7 @@
     }
 
     // -------------------------
-    // Choropleth layer (optional toggle)
+    // Choropleth layer (toggle)
     // -------------------------
     function updateChoropleth(feats) {
       if (choroLayer) choroLayer.remove();
@@ -462,18 +520,14 @@
     }
 
     // -------------------------
-    // Legend rendering (in header)
+    // Legend (compact)
     // -------------------------
     function rampBlock(rampFn, min, max, unitSuffix="") {
       const steps = 6;
-      if (!isNum(min) || !isNum(max) || max <= min) {
-        return `<div class="muted">n/a</div>`;
-      }
+      if (!isNum(min) || !isNum(max) || max <= min) return `<div class="muted">n/a</div>`;
       let html = "";
       for (let i = 0; i < steps; i++) {
-        const t0 = i / steps;
-        const t1 = (i + 1) / steps;
-        const mid = (t0 + t1) / 2;
+        const t0 = i / steps, t1 = (i + 1) / steps, mid = (t0 + t1) / 2;
         const a = (min + (max - min) * t0).toFixed(1);
         const b = (min + (max - min) * t1).toFixed(1);
         html += `<div><span class="swatch" style="background:${rampFn(mid)}"></span><span>${a}–${b}${unitSuffix}</span></div>`;
@@ -482,15 +536,13 @@
     }
 
     function renderLegend({ pointMode, ttcMin, ttcMax, choroInfo }) {
-      const metric = metricSel.value;
-
       // Points legend
       let pointsLegend = "";
       if (!showPoints.checked) {
         pointsLegend = `<div class="muted">Points hidden</div>`;
       } else if (pointMode === "ttc") {
         pointsLegend =
-          `<div class="small muted">Resolved points colored by <strong>time to close</strong> (hrs). Open points shown in gray.</div>
+          `<div class="muted">Resolved points colored by <strong>time to close</strong> (hrs). Open points gray.</div>
            ${rampBlock(rbRamp, ttcMin, ttcMax, " hrs")}`;
       } else {
         pointsLegend =
@@ -506,18 +558,17 @@
         const lbl = metricLabel(choroInfo.metric, choroInfo.perPopOn);
         const which = (choroInfo.geo === "wards") ? "Wards" : "ANCs";
         choroLegend =
-          `<div class="small muted">${which} shaded by <strong>${lbl}</strong>.</div>
+          `<div class="muted">${which} shaded by <strong>${lbl}</strong>.</div>
            ${rampBlock(choroRamp, choroInfo.min, choroInfo.max, choroInfo.metric === "pct_closed" ? "%" : "")}`;
       }
 
-      legendBox.innerHTML =
-        `<div class="legendTitle">Legend</div>
-         <div class="legendSection">
-           <div><strong>Points</strong></div>
+      legendBody.innerHTML =
+        `<div>
+           <div class="legendSectionTitle">Points</div>
            ${pointsLegend}
          </div>
-         <div class="legendSection">
-           <div><strong>Choropleth</strong></div>
+         <div>
+           <div class="legendSectionTitle">Choropleth</div>
            ${choroLegend}
          </div>`;
     }
@@ -529,7 +580,8 @@
     function recompute() {
       clearTimeout(timer);
       timer = setTimeout(() => {
-        syncUI();
+        // any time metric changes, per-pop validity might change
+        validatePerPopToggle();
         clampSliders();
 
         const feats = filteredPoints();
@@ -537,7 +589,6 @@
         startLabel.textContent = fmtDT(Number(startSlider.value));
         endLabel.textContent = fmtDT(Number(endSlider.value));
 
-        // If metric is median/mean ttc, color resolved points by their own ttc_hours
         const metric = metricSel.value;
         const pointMode = pointsUseTtcScale(metric) ? "ttc" : "status";
 
@@ -547,18 +598,13 @@
             .map(f => f.properties)
             .filter(p => p && p.closed === true && isNum(p.ttc_hours))
             .map(p => p.ttc_hours);
-
-          if (vals.length) {
-            ttcMin = Math.min(...vals);
-            ttcMax = Math.max(...vals);
-          }
+          if (vals.length) { ttcMin = Math.min(...vals); ttcMax = Math.max(...vals); }
         }
 
         updatePointLayer(feats, ttcMin, ttcMax);
         const choroInfo = updateChoropleth(feats);
-
         renderLegend({ pointMode, ttcMin, ttcMax, choroInfo });
-      }, 75);
+      }, 60);
     }
 
     // -------------------------
@@ -568,13 +614,8 @@
       const refresh = await fetchJson("./data/last_refresh.json");
       setMeta(refresh);
 
-      // populations.json is optional, but needed for per-pop
-      try {
-        pops = await fetchJson("./data/populations.json");
-      } catch (e) {
-        pops = null;
-        console.warn("No populations.json loaded:", e.message);
-      }
+      try { pops = await fetchJson("./data/populations.json"); }
+      catch (e) { pops = null; console.warn("No populations.json loaded:", e.message); }
 
       allPointsFC = await fetchJson("./data/points.geojson");
       wardsBase = await fetchJson("./data/choropleth_wards.geojson");
@@ -583,38 +624,58 @@
       const times = allPointsFC.features
         .map(f => f.properties?.add_ms)
         .filter(t => typeof t === "number" && isFinite(t));
-
       if (!times.length) throw new Error("No add_ms timestamps found in points.geojson");
 
-      const minT = Math.min(...times);
-      const maxT = Math.max(...times);
+      RANGE_MIN = Math.min(...times);
+      RANGE_MAX = Math.max(...times);
 
-      const STEP = 3600 * 1000; // 1 hour
+      startSlider.min = String(RANGE_MIN);
+      startSlider.max = String(RANGE_MAX);
+      startSlider.step = String(RANGE_STEP);
+      startSlider.value = String(RANGE_MIN);
 
-      startSlider.min = String(minT);
-      startSlider.max = String(maxT);
-      startSlider.step = String(STEP);
-      startSlider.value = String(minT);
+      endSlider.min = String(RANGE_MIN);
+      endSlider.max = String(RANGE_MAX);
+      endSlider.step = String(RANGE_STEP);
+      endSlider.value = String(RANGE_MAX);
 
-      endSlider.min = String(minT);
-      endSlider.max = String(maxT);
-      endSlider.step = String(STEP);
-      endSlider.value = String(maxT);
+      // scope->metric options
+      applyScope();
 
-      // wire UI
+      // listeners
       startSlider.addEventListener("input", recompute);
       endSlider.addEventListener("input", recompute);
 
-      geoSel.addEventListener("change", () => { syncUI(); recompute(); });
-      metricSel.addEventListener("change", () => { syncUI(); recompute(); });
+      geoSel.addEventListener("change", () => { validatePerPopToggle(); recompute(); });
+      showChoro.addEventListener("change", () => { validatePerPopToggle(); recompute(); });
 
-      statusSel.addEventListener("change", recompute);
-      showChoro.addEventListener("change", () => { syncUI(); recompute(); });
-      perPop.addEventListener("change", recompute);
+      scopeSel.addEventListener("change", () => { applyScope(); validatePerPopToggle(); recompute(); });
+      metricSel.addEventListener("change", () => { validatePerPopToggle(); recompute(); });
+
+      perPop.addEventListener("change", () => { validatePerPopToggle(); recompute(); });
       showPoints.addEventListener("change", recompute);
 
+      // presets
+      presetAll.addEventListener("click", () => {
+        startSlider.value = String(RANGE_MIN);
+        endSlider.value = String(RANGE_MAX);
+        recompute();
+      });
+
+      presetStorm.addEventListener("click", () => {
+        // Jan 24 in Eastern time (standard time: -05:00)
+        const stormStart = Date.parse("2026-01-24T00:00:00-05:00");
+        const target = Math.max(RANGE_MIN, stormStart);
+
+        // snap to hour step
+        const snapped = Math.floor(target / RANGE_STEP) * RANGE_STEP;
+
+        startSlider.value = String(snapped);
+        endSlider.value = String(RANGE_MAX);
+        recompute();
+      });
+
       // initial render
-      syncUI();
       recompute();
     }
 
