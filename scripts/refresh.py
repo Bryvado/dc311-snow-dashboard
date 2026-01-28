@@ -305,7 +305,7 @@ def main() -> None:
         "ANC_ID": clean_str(row.get("ANC_ID")),
         "closed": clean_bool(row.get("closed")),
         "add_ms": add_ms,
-        "res_ms": res_ms,,
+        "res_ms": res_ms,
         "ttc_hours": clean_float(row.get("ttc_hours")),
         "open_age_hours": clean_float(row.get("open_age_hours")),
     }
