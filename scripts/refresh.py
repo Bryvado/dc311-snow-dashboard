@@ -11,6 +11,23 @@ import pandas as pd
 import requests
 from shapely.geometry import Point, shape
 from shapely.strtree import STRtree
+import json
+import pandas as pd
+
+def clean_str(v):
+    if v is None or (isinstance(v, float) and pd.isna(v)) or pd.isna(v):
+        return None
+    return str(v)
+
+def clean_bool(v):
+    if v is None or pd.isna(v):
+        return None
+    return bool(v)
+
+def clean_float(v):
+    if v is None or pd.isna(v):
+        return None
+    return float(v)
 
 # -----------------
 # Config
@@ -247,8 +264,16 @@ def main() -> None:
     anc = load_polygons(ANC_PATH, "ANC_ID")
     wards = load_polygons(WARDS_PATH, "WARD")
 
-    df["ANC_ID"] = assign_ids(points, anc["polys"], anc["ids"])
-    df["WARD_POLY"] = assign_ids(points, wards["polys"], wards["ids"])
+    df["_lon"] = pd.to_numeric(df.get("LONGITUDE"), errors="coerce")
+`   df["_lat"] = pd.to_numeric(df.get("LATITUDE"), errors="coerce")
+
+    pt_series = [
+        Point(lon, lat) if (pd.notna(lon) and pd.notna(lat)) else None
+        for lon, lat in zip(df["_lon"], df["_lat"])
+    ]
+
+    df["ANC_ID"] = assign_ids(pt_series, anc["polys"], anc["ids"])
+    df["WARD"]   = assign_ids(pt_series, wards["polys"], wards["ids"])
 
     # --------
     # Write POINTS GeoJSON (minimal properties for browser filtering)
@@ -271,19 +296,19 @@ def main() -> None:
 
         # Keep properties small; avoid DETAILS (can be huge)
         props = {
-            "OBJECTID": int(row["OBJECTID"]) if not pd.isna(row.get("OBJECTID")) else None,
-            "SERVICEREQUESTID": row.get("SERVICEREQUESTID"),
-            "SERVICECODEDESCRIPTION": row.get("SERVICECODEDESCRIPTION"),
-            "SERVICEORDERSTATUS": row.get("SERVICEORDERSTATUS"),
-            "STREETADDRESS": row.get("STREETADDRESS"),
-            "WARD": None if pd.isna(row.get("WARD_POLY")) else str(row.get("WARD_POLY")),
-            "ANC_ID": None if pd.isna(row.get("ANC_ID")) else str(row.get("ANC_ID")),
-            "closed": bool(row.get("closed")) if not pd.isna(row.get("closed")) else None,
-            "add_ms": add_ms,
-            "res_ms": res_ms,
-            "ttc_hours": None if pd.isna(row.get("ttc_hours")) else float(row.get("ttc_hours")),
-            "open_age_hours": None if pd.isna(row.get("open_age_hours")) else float(row.get("open_age_hours")),
-        }
+        "OBJECTID": int(row["OBJECTID"]) if not pd.isna(row["OBJECTID"]) else None,
+        "SERVICEREQUESTID": clean_str(row.get("SERVICEREQUESTID")),
+        "SERVICECODEDESCRIPTION": clean_str(row.get("SERVICECODEDESCRIPTION")),
+        "SERVICEORDERSTATUS": clean_str(row.get("SERVICEORDERSTATUS")),
+        "STREETADDRESS": clean_str(row.get("STREETADDRESS")),
+        "WARD": clean_str(row.get("WARD")),
+        "ANC_ID": clean_str(row.get("ANC_ID")),
+        "closed": clean_bool(row.get("closed")),
+        "add_ms": int(row["add_ms"]) if not pd.isna(row["add_ms"]) else None,
+        "res_ms": int(row["res_ms"]) if not pd.isna(row["res_ms"]) else None,
+        "ttc_hours": clean_float(row.get("ttc_hours")),
+        "open_age_hours": clean_float(row.get("open_age_hours")),
+    }
 
         features.append(
             {
@@ -294,7 +319,7 @@ def main() -> None:
         )
 
     points_geojson = {"type": "FeatureCollection", "features": features}
-    (OUT_DIR / "points.geojson").write_text(json.dumps(points_geojson), encoding="utf-8")
+    (out / "points.geojson").write_text(json.dumps(points_geojson, ensure_ascii=False, allow_nan=False))
 
     # --------
     # Aggregates (full 30 days)
