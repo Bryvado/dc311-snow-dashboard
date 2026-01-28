@@ -9,7 +9,7 @@
     body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
     header { padding: 12px 14px; border-bottom: 1px solid #eee; background: #fff; }
     h1 { font-size: 20px; margin: 0 0 6px; }
-    #map { height: calc(100vh - 150px); }
+    #map { height: calc(100vh - 185px); }
     .row { display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
     .small { font-size: 13px; color:#555; }
     label { font-size: 13px; color:#222; }
@@ -40,8 +40,22 @@
           <option value="mean_ttc_hours">Mean time-to-close (hrs)</option>
           <option value="pct_closed">% closed</option>
           <option value="open">Open count</option>
+          <option value="closed">Closed count</option>
           <option value="total">Total requests</option>
         </select>
+      </label>
+
+      <label>Status:
+        <select id="status">
+          <option value="both" selected>Open + Resolved</option>
+          <option value="open">Open only</option>
+          <option value="resolved">Resolved only</option>
+        </select>
+      </label>
+
+      <label class="pill">
+        <input type="checkbox" id="perPop" />
+        Per 10k residents
       </label>
 
       <label class="pill">
@@ -94,20 +108,41 @@
       return colors[Math.min(colors.length - 1, Math.floor(t * colors.length))];
     }
 
-    function metricLabel(metric) {
-      return {
+    async function fetchJson(url) {
+      const r = await fetch(url, { cache: "no-store" });
+      if (!r.ok) throw new Error(`${url} HTTP ${r.status}`);
+      return await r.json();
+    }
+
+    function metricLabel(metric, perPopOn) {
+      const base = {
         median_ttc_hours: "Median time-to-close (hrs)",
         mean_ttc_hours: "Mean time-to-close (hrs)",
         pct_closed: "% closed",
         open: "Open count",
+        closed: "Closed count",
         total: "Total requests",
       }[metric] ?? metric;
+
+      if (perPopOn && (metric === "open" || metric === "closed" || metric === "total")) {
+        return `${base} (per 10k residents)`;
+      }
+      return base;
     }
 
-    function metricValue(m, metric) {
+    function metricValue(m, metric, pop, perPopOn) {
       if (!m) return null;
-      if (metric === "pct_closed") return isNum(m.pct_closed) ? m.pct_closed * 100 : null;
-      return m[metric];
+
+      if (metric === "pct_closed") return isNum(m.pct_closed) ? (m.pct_closed * 100) : null;
+      if (metric === "median_ttc_hours") return m.median_ttc_hours;
+      if (metric === "mean_ttc_hours") return m.mean_ttc_hours;
+
+      // count metrics
+      const v = m[metric];
+      if (!perPopOn) return v;
+
+      if (!isNum(v) || !isNum(pop) || pop <= 0) return null;
+      return (v / pop) * 10000.0;
     }
 
     function computeMetrics(points, keyField) {
@@ -169,6 +204,7 @@
     let allPointsFC = null;
     let wardsBase = null;
     let ancsBase = null;
+    let pops = null; // { wards: {...}, ancs: {...} }
 
     let pointsLayer = null;
     let choroLayer = null;
@@ -176,6 +212,8 @@
     // ---- UI elements
     const geoSel = document.getElementById("geo");
     const metricSel = document.getElementById("metric");
+    const statusSel = document.getElementById("status");
+    const perPop = document.getElementById("perPop");
     const showPoints = document.getElementById("showPoints");
     const startSlider = document.getElementById("start");
     const endSlider = document.getElementById("end");
@@ -191,20 +229,25 @@
     function clampSliders() {
       const a = Number(startSlider.value);
       const b = Number(endSlider.value);
-      if (a > b) {
-        // keep the one being moved “winning” by snapping the other
-        endSlider.value = startSlider.value;
-      }
+      if (a > b) endSlider.value = startSlider.value;
     }
 
     function filteredPoints() {
       const a = Number(startSlider.value);
       const b = Number(endSlider.value);
-      const feats = allPointsFC.features.filter(f => {
-        const t = f.properties?.add_ms;
-        return typeof t === "number" && t >= a && t <= b;
+      const mode = statusSel.value; // both | open | resolved
+
+      return allPointsFC.features.filter(f => {
+        const p = f.properties || {};
+        const t = p.add_ms;
+        if (typeof t !== "number" || !isFinite(t) || t < a || t > b) return false;
+
+        const isClosed = (p.closed === true);
+        if (mode === "open" && isClosed) return false;
+        if (mode === "resolved" && !isClosed) return false;
+
+        return true;
       });
-      return feats;
     }
 
     function updatePointLayer(feats) {
@@ -225,35 +268,38 @@
             weight: 0.5,
             opacity: 0.8,
             fillOpacity: 0.7,
-            // simple status styling
             fillColor: closed ? "#2ca02c" : "#d62728",
             color: "#222"
           });
         },
         onEachFeature: (feature, layer) => {
           const p = feature.properties || {};
-          const status = p.SERVICEORDERSTATUS ?? (p.closed ? "Closed" : "Open");
           const created = (typeof p.add_ms === "number") ? fmtDT(p.add_ms) : "—";
+          const isClosed = (p.closed === true);
           const resolved = (typeof p.res_ms === "number") ? fmtDT(p.res_ms) : "—";
+
           const ward = p.WARD ?? "—";
           const anc = p.ANC_ID ?? "—";
           const addr = p.STREETADDRESS ?? "";
           const desc = p.SERVICECODEDESCRIPTION ?? "";
+          const status = isClosed ? "Resolved" : "Open";
 
-          layer.bindPopup(
+          const html =
             `<strong>${status}</strong><br/>
              ${desc}<br/>
              ${addr}<br/>
              Ward ${ward} · ANC ${anc}<br/>
              Created: ${created}<br/>
-             Resolved: ${resolved}`
-          );
+             Resolved: ${isClosed ? "Yes" : "No"}${isClosed ? `<br/>Resolved at: ${resolved}` : ""}`;
+
+          layer.bindTooltip(html, { sticky: true });
+          layer.bindPopup(html);
         }
       }).addTo(map);
     }
 
-    function updateLegend(metric, min, max) {
-      document.getElementById("legendMetric").textContent = metricLabel(metric);
+    function updateLegend(metric, perPopOn, min, max) {
+      document.getElementById("legendMetric").textContent = metricLabel(metric, perPopOn);
 
       const rampDiv = document.getElementById("legendRamp");
       rampDiv.innerHTML = "";
@@ -277,27 +323,29 @@
       if (geo === "none") return;
 
       const metric = metricSel.value;
+      const perPopOn = perPop.checked;
+
       const base = (geo === "wards") ? wardsBase : ancsBase;
       const keyField = (geo === "wards") ? "WARD" : "ANC_ID";
       const pointsKey = (geo === "wards") ? "WARD" : "ANC_ID";
 
+      const popTable = (geo === "wards") ? (pops?.wards || {}) : (pops?.ancs || {});
+
       const mm = computeMetrics(feats, pointsKey);
 
-      // build a fresh copy so we can overwrite properties cleanly
       const gj = JSON.parse(JSON.stringify(base));
 
-      // attach computed metrics to polygon props
       for (const ft of gj.features) {
         const k = ft.properties?.[keyField];
-        const m = (k != null) ? mm[String(k)] : null;
+        const id = (k != null) ? String(k) : null;
         ft.properties = ft.properties || {};
-        ft.properties._m = m || null;
+        ft.properties._m = (id && mm[id]) ? mm[id] : null;
+        ft.properties._pop = (id && popTable[id] != null) ? Number(popTable[id]) : null;
       }
 
-      // compute min/max for styling
       const vals = [];
       for (const ft of gj.features) {
-        const v = metricValue(ft.properties._m, metric);
+        const v = metricValue(ft.properties._m, metric, ft.properties._pop, perPopOn);
         if (isNum(v)) vals.push(v);
       }
       const min = vals.length ? Math.min(...vals) : 0;
@@ -305,7 +353,7 @@
 
       choroLayer = L.geoJSON(gj, {
         style: (feature) => {
-          const v = metricValue(feature.properties?._m, metric);
+          const v = metricValue(feature.properties?._m, metric, feature.properties?._pop, perPopOn);
           let fill = "#eee";
           if (isNum(v) && max > min) fill = ramp((v - min) / (max - min));
           return { color: "#333", weight: 1, fillColor: fill, fillOpacity: 0.75 };
@@ -313,9 +361,11 @@
         onEachFeature: (feature, layer) => {
           const p = feature.properties || {};
           const m = p._m;
+          const pop = p._pop;
+
           const name = (geo === "wards") ? `Ward ${p.WARD}` : `ANC ${p.ANC_ID}`;
 
-          const v = metricValue(m, metric);
+          const v = metricValue(m, metric, pop, perPopOn);
           const shown = (metric === "pct_closed" && isNum(v)) ? `${v.toFixed(1)}%`
                       : (isNum(v) ? v.toFixed(1) : "n/a");
 
@@ -323,16 +373,19 @@
           const open = m?.open ?? 0;
           const closed = m?.closed ?? 0;
 
+          const popLine = isNum(pop) ? `Population: ${Math.round(pop).toLocaleString()}` : `Population: n/a`;
+
           layer.bindTooltip(
             `<strong>${name}</strong><br/>
-             ${metricLabel(metric)}: ${shown}<br/>
-             total: ${total} · open: ${open} · closed: ${closed}`,
+             ${metricLabel(metric, perPopOn)}: ${shown}<br/>
+             total: ${total} · open: ${open} · closed: ${closed}<br/>
+             ${popLine}`,
             { sticky: true }
           );
         }
       }).addTo(map);
 
-      updateLegend(metric, min, max);
+      updateLegend(metric, perPopOn, min, max);
     }
 
     // debounce for slider drags
@@ -342,23 +395,32 @@
       timer = setTimeout(() => {
         clampSliders();
         const feats = filteredPoints();
+
         countPill.textContent = `Points: ${feats.length.toLocaleString()} / ${allPointsFC.features.length.toLocaleString()}`;
         startLabel.textContent = fmtDT(Number(startSlider.value));
         endLabel.textContent = fmtDT(Number(endSlider.value));
+
         updatePointLayer(feats);
         updateChoropleth(feats);
       }, 75);
     }
 
     async function boot() {
-      const refresh = await fetch("./data/last_refresh.json").then(r => r.json());
+      const refresh = await fetchJson("./data/last_refresh.json");
       setMeta(refresh);
 
-      allPointsFC = await fetch("./data/points.geojson").then(r => r.json());
-      wardsBase = await fetch("./data/choropleth_wards.geojson").then(r => r.json());
-      ancsBase = await fetch("./data/choropleth_ancs.geojson").then(r => r.json());
+      // populations are optional (per-pop will show n/a if missing)
+      try {
+        pops = await fetchJson("./data/populations.json");
+      } catch (e) {
+        pops = null;
+        console.warn("No populations.json loaded:", e.message);
+      }
 
-      // slider range = min/max add_ms across points
+      allPointsFC = await fetchJson("./data/points.geojson");
+      wardsBase = await fetchJson("./data/choropleth_wards.geojson");
+      ancsBase = await fetchJson("./data/choropleth_ancs.geojson");
+
       const times = allPointsFC.features
         .map(f => f.properties?.add_ms)
         .filter(t => typeof t === "number" && isFinite(t));
@@ -366,8 +428,7 @@
       const minT = Math.min(...times);
       const maxT = Math.max(...times);
 
-      // use hour steps
-      const STEP = 3600 * 1000;
+      const STEP = 3600 * 1000; // hour
 
       startSlider.min = String(minT);
       startSlider.max = String(maxT);
@@ -379,19 +440,19 @@
       endSlider.step = String(STEP);
       endSlider.value = String(maxT);
 
-      // initial render
       recompute();
 
-      // wire UI
       startSlider.addEventListener("input", recompute);
       endSlider.addEventListener("input", recompute);
       geoSel.addEventListener("change", recompute);
       metricSel.addEventListener("change", recompute);
+      statusSel.addEventListener("change", recompute);
+      perPop.addEventListener("change", recompute);
       showPoints.addEventListener("change", recompute);
     }
 
     boot().catch(err => {
-      document.getElementById("meta").textContent = "Failed to load data files. Check docs/data outputs.";
+      document.getElementById("meta").textContent = `Failed to load data files: ${err.message}`;
       console.error(err);
     });
   </script>
