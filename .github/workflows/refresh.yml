@@ -3,10 +3,9 @@ name: Refresh DC 311 Snow metrics
 on:
   workflow_dispatch:
   push:
-    branches: [ "main" ]
-  # add this later once you're ready for automatic refresh
-   schedule:
-     - cron: "*/5 * * * *"
+    branches: ["main"]
+  schedule:
+    - cron: "*/5 * * * *"
 
 permissions:
   contents: write
