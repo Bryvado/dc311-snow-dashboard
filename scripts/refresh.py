@@ -100,7 +100,7 @@ def assign_ids(points: List[Optional[Point]], polys: List[Any], ids: List[str]) 
             continue
 
         hits = tree.query(pt)
-        if not hits:
+        if hits is None or len(hits) == 0:
             out.append(None)
             continue
 
