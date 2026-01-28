@@ -4,122 +4,396 @@
   <meta charset="utf-8" />
   <title>DC311 Snow Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; }
-    h1 { margin: 0 0 10px; }
-    .meta { color: #444; margin-bottom: 16px; }
-    select { padding: 6px 8px; margin-left: 8px; }
-    table { border-collapse: collapse; width: 100%; margin-top: 14px; }
-    th, td { border-bottom: 1px solid #eee; padding: 8px 10px; text-align: left; font-size: 14px; }
-    th { background: #fafafa; position: sticky; top: 0; }
-    .num { text-align: right; font-variant-numeric: tabular-nums; }
-    .small { font-size: 13px; color: #666; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    header { padding: 12px 14px; border-bottom: 1px solid #eee; background: #fff; }
+    h1 { font-size: 20px; margin: 0 0 6px; }
+    #map { height: calc(100vh - 150px); }
+    .row { display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+    .small { font-size: 13px; color:#555; }
+    label { font-size: 13px; color:#222; }
+    select, input[type="checkbox"] { margin-left: 6px; }
+    input[type="range"] { width: 240px; }
+    .pill { padding: 2px 8px; border: 1px solid #ddd; border-radius: 999px; font-size: 12px; color:#333; background:#fafafa; }
+    .legend { background:#fff; padding:8px 10px; border:1px solid #ddd; border-radius:8px; font-size:12px; }
+    .swatch { display:inline-block; width:12px; height:12px; vertical-align:middle; margin-right:6px; border:1px solid #bbb; }
   </style>
 </head>
 <body>
-  <h1>DC311 Snow Dashboard</h1>
+  <header>
+    <h1>DC311 Snow Dashboard</h1>
+    <div class="row small" id="meta">Loading…</div>
 
-  <div class="meta">
-    <span id="refresh">Loading…</span>
-    <span class="small"> | Source: DC GIS ArcGIS layer</span>
-    <label style="float:right;">
-      View:
-      <select id="view">
-        <option value="ward">Ward</option>
-        <option value="anc">ANC</option>
-      </select>
-    </label>
-  </div>
+    <div class="row" style="margin-top:10px;">
+      <label>Choropleth:
+        <select id="geo">
+          <option value="none">None</option>
+          <option value="wards" selected>Wards</option>
+          <option value="ancs">ANCs</option>
+        </select>
+      </label>
 
-  <div id="counts" class="small"></div>
+      <label>Metric:
+        <select id="metric">
+          <option value="median_ttc_hours" selected>Median time-to-close (hrs)</option>
+          <option value="mean_ttc_hours">Mean time-to-close (hrs)</option>
+          <option value="pct_closed">% closed</option>
+          <option value="open">Open count</option>
+          <option value="total">Total requests</option>
+        </select>
+      </label>
 
-  <table id="tbl">
-    <thead>
-      <tr id="hdr"></tr>
-    </thead>
-    <tbody id="body"></tbody>
-  </table>
+      <label class="pill">
+        <input type="checkbox" id="showPoints" checked />
+        Show points
+      </label>
 
+      <span class="pill" id="countPill">Points: —</span>
+    </div>
+
+    <div class="row" style="margin-top:10px;">
+      <label>From:
+        <input type="range" id="start" />
+        <span class="small" id="startLabel">—</span>
+      </label>
+      <label>To:
+        <input type="range" id="end" />
+        <span class="small" id="endLabel">—</span>
+      </label>
+    </div>
+  </header>
+
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const fmtInt = (x) => (x === null || x === undefined) ? "—" : Number(x).toLocaleString();
-    const fmtPct = (x) => (x === null || x === undefined) ? "—" : (Number(x) * 100).toFixed(1) + "%";
-    const fmtHrs = (x) => (x === null || x === undefined) ? "—" : Number(x).toFixed(1);
+    // ---- helpers
+    const fmtDT = (ms) => {
+      const d = new Date(ms);
+      return d.toLocaleString(undefined, { year:"numeric", month:"short", day:"2-digit", hour:"2-digit", minute:"2-digit" });
+    };
+    const isNum = (x) => typeof x === "number" && isFinite(x);
 
-    async function loadRefresh() {
-      const j = await fetch("./data/last_refresh.json").then(r => r.json());
-      document.getElementById("refresh").textContent =
-        `Last refresh (UTC): ${j.last_refresh_utc} — Records: ${fmtInt(j.records)}`;
-      return j;
+    function median(arr) {
+      if (!arr.length) return null;
+      arr.sort((a,b)=>a-b);
+      const m = Math.floor(arr.length/2);
+      return arr.length % 2 ? arr[m] : (arr[m-1] + arr[m]) / 2;
+    }
+    function mean(arr) {
+      if (!arr.length) return null;
+      let s = 0;
+      for (const v of arr) s += v;
+      return s / arr.length;
     }
 
-    function setHeader(kind) {
-      const hdr = document.getElementById("hdr");
-      hdr.innerHTML = "";
-      const cols = kind === "ward"
-        ? ["Ward", "Total", "Open", "Closed", "% Closed", "Median time-to-close (hrs)", "Mean time-to-close (hrs)", "Median open age (hrs)"]
-        : ["ANC", "Total", "Open", "Closed", "% Closed", "Median time-to-close (hrs)", "Mean time-to-close (hrs)", "Median open age (hrs)"];
-      cols.forEach((c, i) => {
-        const th = document.createElement("th");
-        th.textContent = c;
-        if (i > 0) th.className = "num";
-        hdr.appendChild(th);
-      });
+    function ramp(t) {
+      const colors = ["#f7fbff","#deebf7","#c6dbef","#9ecae1","#6baed6","#2171b5"];
+      t = Math.max(0, Math.min(1, t));
+      return colors[Math.min(colors.length - 1, Math.floor(t * colors.length))];
     }
 
-    function rowFor(kind, r) {
-      const key = (kind === "ward") ? (r.WARD ?? "—") : (r.ANC_ID ?? "—");
-      return [
-        {v: key, cls: ""},
-        {v: fmtInt(r.total), cls: "num"},
-        {v: fmtInt(r.open), cls: "num"},
-        {v: fmtInt(r.closed), cls: "num"},
-        {v: fmtPct(r.pct_closed), cls: "num"},
-        {v: fmtHrs(r.median_ttc_hours), cls: "num"},
-        {v: fmtHrs(r.mean_ttc_hours), cls: "num"},
-        {v: fmtHrs(r.median_open_age_hours), cls: "num"},
-      ];
+    function metricLabel(metric) {
+      return {
+        median_ttc_hours: "Median time-to-close (hrs)",
+        mean_ttc_hours: "Mean time-to-close (hrs)",
+        pct_closed: "% closed",
+        open: "Open count",
+        total: "Total requests",
+      }[metric] ?? metric;
     }
 
-    async function loadTable(kind) {
-      setHeader(kind);
+    function metricValue(m, metric) {
+      if (!m) return null;
+      if (metric === "pct_closed") return isNum(m.pct_closed) ? m.pct_closed * 100 : null;
+      return m[metric];
+    }
 
-      const url = kind === "ward" ? "./data/metrics_ward.json" : "./data/metrics_anc.json";
-      const data = await fetch(url).then(r => r.json());
+    function computeMetrics(points, keyField) {
+      const groups = new Map();
 
-      // Sort by total desc (should already be, but just in case)
-      data.sort((a,b) => (b.total ?? 0) - (a.total ?? 0));
+      for (const f of points) {
+        const p = f.properties || {};
+        const k = p[keyField];
+        if (!k) continue;
 
-      const tbody = document.getElementById("body");
-      tbody.innerHTML = "";
-
-      for (const r of data) {
-        const tr = document.createElement("tr");
-        for (const cell of rowFor(kind, r)) {
-          const td = document.createElement("td");
-          td.textContent = cell.v;
-          td.className = cell.cls;
-          tr.appendChild(td);
+        let g = groups.get(k);
+        if (!g) {
+          g = { total:0, open:0, closed:0, pct_closed:null,
+                median_ttc_hours:null, mean_ttc_hours:null, median_open_age_hours:null,
+                _ttc:[], _age:[] };
+          groups.set(k, g);
         }
-        tbody.appendChild(tr);
+
+        g.total += 1;
+
+        if (p.closed === true) {
+          g.closed += 1;
+          if (isNum(p.ttc_hours)) g._ttc.push(p.ttc_hours);
+        } else {
+          g.open += 1;
+          if (isNum(p.open_age_hours)) g._age.push(p.open_age_hours);
+        }
       }
 
-      const totals = data.reduce((acc, r) => {
-        acc.total += (r.total ?? 0);
-        acc.open += (r.open ?? 0);
-        acc.closed += (r.closed ?? 0);
-        return acc;
-      }, {total:0, open:0, closed:0});
-
-      document.getElementById("counts").textContent =
-        `Aggregated from output file: total ${fmtInt(totals.total)} • open ${fmtInt(totals.open)} • closed ${fmtInt(totals.closed)}`;
+      const out = {};
+      for (const [k, g] of groups.entries()) {
+        g.pct_closed = g.total ? (g.closed / g.total) : null;
+        g.median_ttc_hours = median(g._ttc);
+        g.mean_ttc_hours = mean(g._ttc);
+        g.median_open_age_hours = median(g._age);
+        delete g._ttc; delete g._age;
+        out[String(k)] = g;
+      }
+      return out;
     }
 
-    (async () => {
-      await loadRefresh();
-      const sel = document.getElementById("view");
-      await loadTable(sel.value);
-      sel.addEventListener("change", () => loadTable(sel.value));
-    })();
+    function legendControl() {
+      const div = L.DomUtil.create('div', 'legend');
+      div.innerHTML = `<div><strong>Legend</strong></div><div class="small" id="legendMetric"></div><div id="legendRamp"></div>`;
+      return div;
+    }
+
+    // ---- map init
+    const map = L.map('map', { preferCanvas: true }).setView([38.9072, -77.0369], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    const legend = L.control({ position: "bottomright" });
+    legend.onAdd = legendControl;
+    legend.addTo(map);
+
+    let allPointsFC = null;
+    let wardsBase = null;
+    let ancsBase = null;
+
+    let pointsLayer = null;
+    let choroLayer = null;
+
+    // ---- UI elements
+    const geoSel = document.getElementById("geo");
+    const metricSel = document.getElementById("metric");
+    const showPoints = document.getElementById("showPoints");
+    const startSlider = document.getElementById("start");
+    const endSlider = document.getElementById("end");
+    const startLabel = document.getElementById("startLabel");
+    const endLabel = document.getElementById("endLabel");
+    const countPill = document.getElementById("countPill");
+
+    function setMeta(j) {
+      document.getElementById("meta").textContent =
+        `Last refresh (UTC): ${j.last_refresh_utc} · Records: ${j.records}`;
+    }
+
+    function clampSliders() {
+      const a = Number(startSlider.value);
+      const b = Number(endSlider.value);
+      if (a > b) {
+        // keep the one being moved “winning” by snapping the other
+        endSlider.value = startSlider.value;
+      }
+    }
+
+    function filteredPoints() {
+      const a = Number(startSlider.value);
+      const b = Number(endSlider.value);
+      const feats = allPointsFC.features.filter(f => {
+        const t = f.properties?.add_ms;
+        return typeof t === "number" && t >= a && t <= b;
+      });
+      return feats;
+    }
+
+    function updatePointLayer(feats) {
+      if (pointsLayer) pointsLayer.remove();
+
+      if (!showPoints.checked) {
+        pointsLayer = null;
+        return;
+      }
+
+      const fc = { type: "FeatureCollection", features: feats };
+
+      pointsLayer = L.geoJSON(fc, {
+        pointToLayer: (feature, latlng) => {
+          const closed = feature.properties?.closed === true;
+          return L.circleMarker(latlng, {
+            radius: 4,
+            weight: 0.5,
+            opacity: 0.8,
+            fillOpacity: 0.7,
+            // simple status styling
+            fillColor: closed ? "#2ca02c" : "#d62728",
+            color: "#222"
+          });
+        },
+        onEachFeature: (feature, layer) => {
+          const p = feature.properties || {};
+          const status = p.SERVICEORDERSTATUS ?? (p.closed ? "Closed" : "Open");
+          const created = (typeof p.add_ms === "number") ? fmtDT(p.add_ms) : "—";
+          const resolved = (typeof p.res_ms === "number") ? fmtDT(p.res_ms) : "—";
+          const ward = p.WARD ?? "—";
+          const anc = p.ANC_ID ?? "—";
+          const addr = p.STREETADDRESS ?? "";
+          const desc = p.SERVICECODEDESCRIPTION ?? "";
+
+          layer.bindPopup(
+            `<strong>${status}</strong><br/>
+             ${desc}<br/>
+             ${addr}<br/>
+             Ward ${ward} · ANC ${anc}<br/>
+             Created: ${created}<br/>
+             Resolved: ${resolved}`
+          );
+        }
+      }).addTo(map);
+    }
+
+    function updateLegend(metric, min, max) {
+      document.getElementById("legendMetric").textContent = metricLabel(metric);
+
+      const rampDiv = document.getElementById("legendRamp");
+      rampDiv.innerHTML = "";
+      const steps = 6;
+
+      for (let i = 0; i < steps; i++) {
+        const t0 = i / steps;
+        const t1 = (i+1) / steps;
+        const sw = document.createElement("div");
+        sw.innerHTML = `<span class="swatch" style="background:${ramp((t0+t1)/2)}"></span>
+                        <span>${(min + (max-min)*t0).toFixed(1)}–${(min + (max-min)*t1).toFixed(1)}</span>`;
+        rampDiv.appendChild(sw);
+      }
+    }
+
+    function updateChoropleth(feats) {
+      if (choroLayer) choroLayer.remove();
+      choroLayer = null;
+
+      const geo = geoSel.value;
+      if (geo === "none") return;
+
+      const metric = metricSel.value;
+      const base = (geo === "wards") ? wardsBase : ancsBase;
+      const keyField = (geo === "wards") ? "WARD" : "ANC_ID";
+      const pointsKey = (geo === "wards") ? "WARD" : "ANC_ID";
+
+      const mm = computeMetrics(feats, pointsKey);
+
+      // build a fresh copy so we can overwrite properties cleanly
+      const gj = JSON.parse(JSON.stringify(base));
+
+      // attach computed metrics to polygon props
+      for (const ft of gj.features) {
+        const k = ft.properties?.[keyField];
+        const m = (k != null) ? mm[String(k)] : null;
+        ft.properties = ft.properties || {};
+        ft.properties._m = m || null;
+      }
+
+      // compute min/max for styling
+      const vals = [];
+      for (const ft of gj.features) {
+        const v = metricValue(ft.properties._m, metric);
+        if (isNum(v)) vals.push(v);
+      }
+      const min = vals.length ? Math.min(...vals) : 0;
+      const max = vals.length ? Math.max(...vals) : 1;
+
+      choroLayer = L.geoJSON(gj, {
+        style: (feature) => {
+          const v = metricValue(feature.properties?._m, metric);
+          let fill = "#eee";
+          if (isNum(v) && max > min) fill = ramp((v - min) / (max - min));
+          return { color: "#333", weight: 1, fillColor: fill, fillOpacity: 0.75 };
+        },
+        onEachFeature: (feature, layer) => {
+          const p = feature.properties || {};
+          const m = p._m;
+          const name = (geo === "wards") ? `Ward ${p.WARD}` : `ANC ${p.ANC_ID}`;
+
+          const v = metricValue(m, metric);
+          const shown = (metric === "pct_closed" && isNum(v)) ? `${v.toFixed(1)}%`
+                      : (isNum(v) ? v.toFixed(1) : "n/a");
+
+          const total = m?.total ?? 0;
+          const open = m?.open ?? 0;
+          const closed = m?.closed ?? 0;
+
+          layer.bindTooltip(
+            `<strong>${name}</strong><br/>
+             ${metricLabel(metric)}: ${shown}<br/>
+             total: ${total} · open: ${open} · closed: ${closed}`,
+            { sticky: true }
+          );
+        }
+      }).addTo(map);
+
+      updateLegend(metric, min, max);
+    }
+
+    // debounce for slider drags
+    let timer = null;
+    function recompute() {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        clampSliders();
+        const feats = filteredPoints();
+        countPill.textContent = `Points: ${feats.length.toLocaleString()} / ${allPointsFC.features.length.toLocaleString()}`;
+        startLabel.textContent = fmtDT(Number(startSlider.value));
+        endLabel.textContent = fmtDT(Number(endSlider.value));
+        updatePointLayer(feats);
+        updateChoropleth(feats);
+      }, 75);
+    }
+
+    async function boot() {
+      const refresh = await fetch("./data/last_refresh.json").then(r => r.json());
+      setMeta(refresh);
+
+      allPointsFC = await fetch("./data/points.geojson").then(r => r.json());
+      wardsBase = await fetch("./data/choropleth_wards.geojson").then(r => r.json());
+      ancsBase = await fetch("./data/choropleth_ancs.geojson").then(r => r.json());
+
+      // slider range = min/max add_ms across points
+      const times = allPointsFC.features
+        .map(f => f.properties?.add_ms)
+        .filter(t => typeof t === "number" && isFinite(t));
+
+      const minT = Math.min(...times);
+      const maxT = Math.max(...times);
+
+      // use hour steps
+      const STEP = 3600 * 1000;
+
+      startSlider.min = String(minT);
+      startSlider.max = String(maxT);
+      startSlider.step = String(STEP);
+      startSlider.value = String(minT);
+
+      endSlider.min = String(minT);
+      endSlider.max = String(maxT);
+      endSlider.step = String(STEP);
+      endSlider.value = String(maxT);
+
+      // initial render
+      recompute();
+
+      // wire UI
+      startSlider.addEventListener("input", recompute);
+      endSlider.addEventListener("input", recompute);
+      geoSel.addEventListener("change", recompute);
+      metricSel.addEventListener("change", recompute);
+      showPoints.addEventListener("change", recompute);
+    }
+
+    boot().catch(err => {
+      document.getElementById("meta").textContent = "Failed to load data files. Check docs/data outputs.";
+      console.error(err);
+    });
   </script>
 </body>
 </html>
