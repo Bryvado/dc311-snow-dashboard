@@ -265,7 +265,7 @@ def main() -> None:
     wards = load_polygons(WARDS_PATH, "WARD")
 
     df["_lon"] = pd.to_numeric(df.get("LONGITUDE"), errors="coerce")
-`   df["_lat"] = pd.to_numeric(df.get("LATITUDE"), errors="coerce")
+    df["_lat"] = pd.to_numeric(df.get("LATITUDE"), errors="coerce")
 
     pt_series = [
         Point(lon, lat) if (pd.notna(lon) and pd.notna(lat)) else None
