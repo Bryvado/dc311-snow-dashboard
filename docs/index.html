@@ -28,6 +28,22 @@
     .muted { color:#666; font-size:12px; }
     .swatch { display:inline-block; width:12px; height:12px; vertical-align:middle; margin-right:6px; border:1px solid #bbb; }
     .legendRow { display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:12px; }
+	.legendOverlay {
+	  background: rgba(255,255,255,0.78);
+	  backdrop-filter: blur(2px);
+	  padding: 8px 10px;
+	  border: 1px solid rgba(0,0,0,0.15);
+	  border-radius: 10px;
+	  font-size: 12px;
+	  max-width: 260px;
+	  max-height: 40vh;
+	  overflow: auto;
+	}
+	.legendOverlay .title { font-weight: 700; margin-bottom: 4px; }
+	.legendOverlay .section { margin-top: 8px; }
+	.legendOverlay .muted { color:#666; }
+	.legendOverlay .swatch { display:inline-block; width:12px; height:12px; vertical-align:middle; margin-right:6px; border:1px solid #bbb; }
+	.legendOverlay .row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
   </style>
 </head>
 <body>
@@ -95,15 +111,6 @@
       <span class="pill btn" id="presetStorm">Storm preset (since Jan 24)</span>
       <span class="pill btn" id="presetAll">Full range</span>
     </div>
-
-    <!-- Compact legend (collapsed by default) -->
-    <div class="row" style="margin-top:10px;">
-      <details class="legend" id="legendDetails">
-        <summary>Legend (click to expand)</summary>
-        <div id="legendBody" class="legendGrid"></div>
-      </details>
-    </div>
-  </header>
 
   <div id="map"></div>
 
@@ -298,7 +305,6 @@
     const countPill = document.getElementById("countPill");
     const presetStorm = document.getElementById("presetStorm");
     const presetAll = document.getElementById("presetAll");
-    const legendBody = document.getElementById("legendBody");
 
     // Globals used by presets
     let RANGE_MIN = null, RANGE_MAX = null, RANGE_STEP = 3600 * 1000;
@@ -562,16 +568,34 @@
            ${rampBlock(choroRamp, choroInfo.min, choroInfo.max, choroInfo.metric === "pct_closed" ? "%" : "")}`;
       }
 
-      legendBody.innerHTML =
-        `<div>
-           <div class="legendSectionTitle">Points</div>
-           ${pointsLegend}
-         </div>
-         <div>
-           <div class="legendSectionTitle">Choropleth</div>
-           ${choroLegend}
-         </div>`;
-    }
+      setLegendHTML(
+	  `<div class="title">Legend</div>
+	   <div class="section">
+		 <div class="legendSectionTitle">Points</div>
+		 ${pointsLegend}
+	   </div>
+	   <div class="section">
+		 <div class="legendSectionTitle">Choropleth</div>
+		 ${choroLegend}
+	   </div>`
+	);
+	
+	// Legend overlay (always visible, semi-transparent)
+	const legendCtrl = L.control({ position: "bottomright" });
+	legendCtrl.onAdd = () => {
+	  const div = L.DomUtil.create("div", "legendOverlay");
+	  div.id = "legendOverlay";
+	  div.innerHTML = `<div class="title">Legend</div><div class="muted">Loading…</div>`;
+	  L.DomEvent.disableClickPropagation(div);
+	  L.DomEvent.disableScrollPropagation(div);
+	  return div;
+	};
+	legendCtrl.addTo(map);
+
+	function setLegendHTML(html) {
+	  const el = document.getElementById("legendOverlay");
+	  if (el) el.innerHTML = html;
+	}
 
     // -------------------------
     // Debounced recompute
