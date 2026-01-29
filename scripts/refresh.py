@@ -14,25 +14,6 @@ from shapely.strtree import STRtree
 import json
 import pandas as pd
 
-from shapely.geometry import shape, mapping
-
-def _round_coords(obj, nd=6):
-    if isinstance(obj, list):
-        return [_round_coords(x, nd) for x in obj]
-    if isinstance(obj, float):
-        return round(obj, nd)
-    return obj
-
-def simplify_fc(gj, tol=0.0005, nd=6):
-    # tol=0.0005 degrees ≈ ~50m; good for city-scale maps at z~12
-    out = {"type": gj.get("type", "FeatureCollection"), "features": []}
-    for ft in gj.get("features", []):
-        geom = shape(ft["geometry"]).simplify(tol, preserve_topology=True)
-        g = mapping(geom)
-        g["coordinates"] = _round_coords(g["coordinates"], nd)
-        out["features"].append({**ft, "geometry": g})
-    return out
-
 def clean_str(v):
     if v is None or (isinstance(v, float) and pd.isna(v)) or pd.isna(v):
         return None
@@ -58,6 +39,11 @@ LAYER_URL = os.getenv(
 OUT_DIR = Path(os.getenv("OUT_DIR", "docs/data"))
 ANC_PATH = Path(os.getenv("ANC_PATH", "data/anc.geojson"))
 WARDS_PATH = Path(os.getenv("WARDS_PATH", "data/wards.geojson"))
+CLUSTERS_PATH = Path(os.getenv("CLUSTERS_PATH", "data/neighborhood_clusters.geojson"))
+PLANNING_PATH = Path(os.getenv("PLANNING_PATH", "data/neighborhood_planning_areas.geojson"))
+TRACTS_PATH = Path(os.getenv("TRACTS_PATH", "data/tracts.geojson"))
+SNOW_ROUTES_PATH = Path(os.getenv("SNOW_ROUTES_PATH", "data/snow_routes.geojson"))
+POPS_PATH = Path(os.getenv("POPS_PATH", "data/populations.json"))
 
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "1000"))
 LOCAL_TZ = os.getenv("LOCAL_TZ", "America/New_York")
@@ -259,6 +245,13 @@ def main() -> None:
     df["add_dt"] = parse_dt_series(df.get("ADDDATE"))
     df["res_dt"] = parse_dt_series(df.get("RESOLUTIONDATE"))
 
+    def dt_to_ms_utc(s):
+        s_utc = s.dt.tz_convert("UTC")
+        return s_utc.map(lambda x: int(x.timestamp() * 1000) if pd.notna(x) else None)
+
+    df["add_ms"] = dt_to_ms_utc(df["add_dt"])
+    df["res_ms"] = dt_to_ms_utc(df["res_dt"])
+
     df["status"] = df.get("SERVICEORDERSTATUS").astype(str)
     df["closed"] = df["status"].str.lower().eq("closed")
 
@@ -283,8 +276,19 @@ def main() -> None:
     anc = load_polygons(ANC_PATH, "ANC_ID")
     wards = load_polygons(WARDS_PATH, "WARD")
 
-    df["_lon"] = pd.to_numeric(df.get("LONGITUDE"), errors="coerce")
-    df["_lat"] = pd.to_numeric(df.get("LATITUDE"), errors="coerce")
+    if not CLUSTERS_PATH.exists():
+        raise FileNotFoundError(f"Missing {CLUSTERS_PATH}. Put clusters GeoJSON at data/neighborhood_clusters.geojson")
+    if not PLANNING_PATH.exists():
+        raise FileNotFoundError(f"Missing {PLANNING_PATH}. Put planning areas GeoJSON at data/neighborhood_planning_areas.geojson")
+    if not TRACTS_PATH.exists():
+        raise FileNotFoundError(f"Missing {TRACTS_PATH}. Put tracts GeoJSON at data/tracts.geojson")
+
+    clusters = load_polygons(CLUSTERS_PATH, "CLUSTER")
+    planning = load_polygons(PLANNING_PATH, "PLANNING_AREA")
+    tracts = load_polygons(TRACTS_PATH, "TRACT")
+
+    df["_lon"] = pd.to_numeric(df.get("_lon"), errors="coerce")
+    df["_lat"] = pd.to_numeric(df.get("_lat"), errors="coerce")
 
     pt_series = [
         Point(lon, lat) if (pd.notna(lon) and pd.notna(lat)) else None
@@ -293,6 +297,10 @@ def main() -> None:
 
     df["ANC_ID"] = assign_ids(pt_series, anc["polys"], anc["ids"])
     df["WARD"]   = assign_ids(pt_series, wards["polys"], wards["ids"])
+
+    df["CLUSTER"] = assign_ids(pt_series, clusters["polys"], clusters["ids"])
+    df["PLANNING_AREA"] = assign_ids(pt_series, planning["polys"], planning["ids"])
+    df["TRACT"] = assign_ids(pt_series, tracts["polys"], tracts["ids"])
 
     # --------
     # Write POINTS GeoJSON (minimal properties for browser filtering)
@@ -322,9 +330,12 @@ def main() -> None:
         "STREETADDRESS": clean_str(row.get("STREETADDRESS")),
         "WARD": clean_str(row.get("WARD")),
         "ANC_ID": clean_str(row.get("ANC_ID")),
+        "CLUSTER": clean_str(row.get("CLUSTER")),
+        "PLANNING_AREA": clean_str(row.get("PLANNING_AREA")),
+        "TRACT": clean_str(row.get("TRACT")),
         "closed": clean_bool(row.get("closed")),
-        "add_ms": add_ms,
-        "res_ms": res_ms,
+        "add_ms": int(row.get("add_ms")) if pd.notna(row.get("add_ms")) else None,
+        "res_ms": int(row.get("res_ms")) if pd.notna(row.get("res_ms")) else None,
         "ttc_hours": clean_float(row.get("ttc_hours")),
         "open_age_hours": clean_float(row.get("open_age_hours")),
     }
@@ -338,15 +349,11 @@ def main() -> None:
         )
 
     points_geojson = {"type": "FeatureCollection", "features": features}
-    (OUT_DIR / "points.geojson").write_text(
-        json.dumps(points_geojson, ensure_ascii=False, allow_nan=False, separators=(",", ":")),
-        encoding="utf-8",
-    )
+    (OUT_DIR / "points.geojson").write_text(json.dumps(points_geojson, ensure_ascii=False, allow_nan=False))
 
     # --------
     # Aggregates (full 30 days)
     # --------
-
     metrics_ward = []
     for ward_key, g in df.groupby("WARD", dropna=False):
         k = None if pd.isna(ward_key) else str(ward_key)
@@ -359,18 +366,8 @@ def main() -> None:
         metrics_anc.append({"ANC_ID": k, **summarize_group(g)})
     metrics_anc_df = pd.DataFrame(metrics_anc).sort_values("total", ascending=False)
 
-    # Minified JSON writes (also converts NaN -> None so JSON is clean)
-    metrics_ward_records = metrics_ward_df.where(pd.notna(metrics_ward_df), None).to_dict(orient="records")
-    metrics_anc_records  = metrics_anc_df.where(pd.notna(metrics_anc_df), None).to_dict(orient="records")
-
-    (OUT_DIR / "metrics_ward.json").write_text(
-        json.dumps(metrics_ward_records, ensure_ascii=False, separators=(",", ":")),
-        encoding="utf-8",
-    )
-    (OUT_DIR / "metrics_anc.json").write_text(
-        json.dumps(metrics_anc_records, ensure_ascii=False, separators=(",", ":")),
-        encoding="utf-8",
-    )
+    (OUT_DIR / "metrics_ward.json").write_text(metrics_ward_df.to_json(orient="records"), encoding="utf-8")
+    (OUT_DIR / "metrics_anc.json").write_text(metrics_anc_df.to_json(orient="records"), encoding="utf-8")
 
     ward_metric_map = {
         str(r["WARD"]): {c: (None if pd.isna(r[c]) else r[c]) for c in metrics_ward_df.columns if c != "WARD"}
@@ -384,23 +381,10 @@ def main() -> None:
     }
 
     wards_choro = merge_metrics_into_geojson(wards["geojson"], "WARD", ward_metric_map)
-    ancs_choro  = merge_metrics_into_geojson(anc["geojson"],   "ANC_ID", anc_metric_map)
+    ancs_choro = merge_metrics_into_geojson(anc["geojson"], "ANC_ID", anc_metric_map)
 
-    # Simplify + minify choropleths
-    tol = float(os.getenv("SIMPLIFY_TOL", "0.0005"))
-    nd  = int(os.getenv("SIMPLIFY_ND", "6"))
-
-    wards_choro = simplify_fc(wards_choro, tol=tol, nd=nd)
-    ancs_choro  = simplify_fc(ancs_choro,  tol=tol, nd=nd)
-
-    (OUT_DIR / "choropleth_wards.geojson").write_text(
-        json.dumps(wards_choro, ensure_ascii=False, separators=(",", ":")),
-        encoding="utf-8",
-    )
-    (OUT_DIR / "choropleth_ancs.geojson").write_text(
-        json.dumps(ancs_choro, ensure_ascii=False, separators=(",", ":")),
-        encoding="utf-8",
-    )
+    (OUT_DIR / "choropleth_wards.geojson").write_text(json.dumps(wards_choro), encoding="utf-8")
+    (OUT_DIR / "choropleth_ancs.geojson").write_text(json.dumps(ancs_choro), encoding="utf-8")
 
     (OUT_DIR / "last_refresh.json").write_text(
         json.dumps(
@@ -415,6 +399,11 @@ def main() -> None:
                     "metrics_anc.json",
                     "choropleth_wards.geojson",
                     "choropleth_ancs.geojson",
+                    "choropleth_clusters.geojson",
+                    "choropleth_planning_areas.geojson",
+                    "choropleth_tracts.geojson",
+                    "snow_routes.geojson",
+                    "populations.json",
                     "last_refresh.json",
                 ],
             },
