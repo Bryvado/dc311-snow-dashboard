@@ -175,15 +175,6 @@
       }
       return out;
     }
-	
-	map.createPane("routesPane");
-	map.getPane("routesPane").style.zIndex = 350;
-
-	map.createPane("choroPane");
-	map.getPane("choroPane").style.zIndex = 400;
-
-	map.createPane("pointsPane");
-	map.getPane("pointsPane").style.zIndex = 450;
 
 
     function legendControl() {
@@ -198,6 +189,15 @@
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap'
     }).addTo(map);
+	
+	map.createPane("routesPane");
+	map.getPane("routesPane").style.zIndex = 350;
+
+	map.createPane("choroPane");
+	map.getPane("choroPane").style.zIndex = 400;
+
+	map.createPane("pointsPane");
+	map.getPane("pointsPane").style.zIndex = 450;
 
     const legend = L.control({ position: "bottomright" });
     legend.onAdd = legendControl;
