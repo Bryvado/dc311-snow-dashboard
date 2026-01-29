@@ -339,10 +339,9 @@ def main() -> None:
 
     points_geojson = {"type": "FeatureCollection", "features": features}
     (OUT_DIR / "points.geojson").write_text(
-    json.dumps(points_geojson, ensure_ascii=False, allow_nan=False),
-    encoding="utf-8",
-)
-
+        json.dumps(points_geojson, ensure_ascii=False, allow_nan=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
 
     # --------
     # Aggregates (full 30 days)
