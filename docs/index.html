@@ -138,11 +138,34 @@
       return s / arr.length;
     }
 
-    async function fetchJson(url) {
-      const r = await fetch(url, { cache: "no-store" });
-      if (!r.ok) throw new Error(`${url} HTTP ${r.status}`);
-      return await r.json();
-    }
+	async function fetchJson(url, cacheMode="default") {
+	  const r = await fetch(url, { cache: cacheMode });
+	  if (!r.ok) throw new Error(`${url} HTTP ${r.status}`);
+	  return await r.json();
+	}
+	
+	const refresh = await fetchJson("./data/last_refresh.json", "no-store");
+
+	// Boundaries almost never change → let them cache hard
+	wardsBase = await fetchJson("./data/choropleth_wards.geojson", "force-cache");
+	ancsBase  = await fetchJson("./data/choropleth_ancs.geojson",  "force-cache");
+
+	// Points update often → allow revalidation (ETag/304) instead of full redownload
+	allPointsFC = await fetchJson("./data/points.geojson", "no-cache");
+	
+	const [refresh, pops_, points_, wards_, ancs_] = await Promise.all([
+	  fetchJson("./data/last_refresh.json", "no-store"),
+	  fetchJson("./data/populations.json", "force-cache").catch(()=>null),
+	  fetchJson("./data/points.geojson", "no-cache"),
+	  fetchJson("./data/choropleth_wards.geojson", "force-cache"),
+	  fetchJson("./data/choropleth_ancs.geojson", "force-cache"),
+	]);
+
+	pops = pops_;
+	allPointsFC = points_;
+	wardsBase = wards_;
+	ancsBase = ancs_;
+	setMeta(refresh);
 
     // Choropleth ramp (light -> dark blue)
     function choroRamp(t) {

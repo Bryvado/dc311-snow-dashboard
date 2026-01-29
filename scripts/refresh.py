@@ -14,6 +14,25 @@ from shapely.strtree import STRtree
 import json
 import pandas as pd
 
+from shapely.geometry import shape, mapping
+
+def _round_coords(obj, nd=6):
+    if isinstance(obj, list):
+        return [_round_coords(x, nd) for x in obj]
+    if isinstance(obj, float):
+        return round(obj, nd)
+    return obj
+
+def simplify_fc(gj, tol=0.0005, nd=6):
+    # tol=0.0005 degrees ≈ ~50m; good for city-scale maps at z~12
+    out = {"type": gj.get("type", "FeatureCollection"), "features": []}
+    for ft in gj.get("features", []):
+        geom = shape(ft["geometry"]).simplify(tol, preserve_topology=True)
+        g = mapping(geom)
+        g["coordinates"] = _round_coords(g["coordinates"], nd)
+        out["features"].append({**ft, "geometry": g})
+    return out
+
 def clean_str(v):
     if v is None or (isinstance(v, float) and pd.isna(v)) or pd.isna(v):
         return None
@@ -328,6 +347,7 @@ def main() -> None:
     # --------
     # Aggregates (full 30 days)
     # --------
+
     metrics_ward = []
     for ward_key, g in df.groupby("WARD", dropna=False):
         k = None if pd.isna(ward_key) else str(ward_key)
@@ -340,8 +360,18 @@ def main() -> None:
         metrics_anc.append({"ANC_ID": k, **summarize_group(g)})
     metrics_anc_df = pd.DataFrame(metrics_anc).sort_values("total", ascending=False)
 
-    (OUT_DIR / "metrics_ward.json").write_text(metrics_ward_df.to_json(orient="records"), encoding="utf-8")
-    (OUT_DIR / "metrics_anc.json").write_text(metrics_anc_df.to_json(orient="records"), encoding="utf-8")
+    # Minified JSON writes (also converts NaN -> None so JSON is clean)
+    metrics_ward_records = metrics_ward_df.where(pd.notna(metrics_ward_df), None).to_dict(orient="records")
+    metrics_anc_records  = metrics_anc_df.where(pd.notna(metrics_anc_df), None).to_dict(orient="records")
+
+    (OUT_DIR / "metrics_ward.json").write_text(
+        json.dumps(metrics_ward_records, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    (OUT_DIR / "metrics_anc.json").write_text(
+        json.dumps(metrics_anc_records, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
 
     ward_metric_map = {
         str(r["WARD"]): {c: (None if pd.isna(r[c]) else r[c]) for c in metrics_ward_df.columns if c != "WARD"}
@@ -355,10 +385,23 @@ def main() -> None:
     }
 
     wards_choro = merge_metrics_into_geojson(wards["geojson"], "WARD", ward_metric_map)
-    ancs_choro = merge_metrics_into_geojson(anc["geojson"], "ANC_ID", anc_metric_map)
+    ancs_choro  = merge_metrics_into_geojson(anc["geojson"],   "ANC_ID", anc_metric_map)
 
-    (OUT_DIR / "choropleth_wards.geojson").write_text(json.dumps(wards_choro), encoding="utf-8")
-    (OUT_DIR / "choropleth_ancs.geojson").write_text(json.dumps(ancs_choro), encoding="utf-8")
+    # Simplify + minify choropleths
+    tol = float(os.getenv("SIMPLIFY_TOL", "0.0005"))
+    nd  = int(os.getenv("SIMPLIFY_ND", "6"))
+
+    wards_choro = simplify_fc(wards_choro, tol=tol, nd=nd)
+    ancs_choro  = simplify_fc(ancs_choro,  tol=tol, nd=nd)
+
+    (OUT_DIR / "choropleth_wards.geojson").write_text(
+        json.dumps(wards_choro, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    (OUT_DIR / "choropleth_ancs.geojson").write_text(
+        json.dumps(ancs_choro, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
 
     (OUT_DIR / "last_refresh.json").write_text(
         json.dumps(
