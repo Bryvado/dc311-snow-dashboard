@@ -382,9 +382,83 @@ def main() -> None:
 
     wards_choro = merge_metrics_into_geojson(wards["geojson"], "WARD", ward_metric_map)
     ancs_choro = merge_metrics_into_geojson(anc["geojson"], "ANC_ID", anc_metric_map)
+    # --------
+    # Choropleths for clusters / planning areas / tracts
+    # --------
+
+    # Summarize metrics by cluster
+    metrics_cluster = []
+    for k, g in df.groupby("CLUSTER", dropna=False):
+        kk = None if pd.isna(k) else str(k)
+        metrics_cluster.append({"CLUSTER": kk, **summarize_group(g)})
+    metrics_cluster_df = pd.DataFrame(metrics_cluster)
+
+    # Summarize metrics by planning area
+    metrics_planning = []
+    for k, g in df.groupby("PLANNING_AREA", dropna=False):
+        kk = None if pd.isna(k) else str(k)
+        metrics_planning.append({"PLANNING_AREA": kk, **summarize_group(g)})
+    metrics_planning_df = pd.DataFrame(metrics_planning)
+
+    # Summarize metrics by tract
+    metrics_tract = []
+    for k, g in df.groupby("TRACT", dropna=False):
+        kk = None if pd.isna(k) else str(k)
+        metrics_tract.append({"TRACT": kk, **summarize_group(g)})
+    metrics_tract_df = pd.DataFrame(metrics_tract)
+
+    # Convert to lookup maps
+    cluster_metric_map = {
+        str(r["CLUSTER"]): {c: (None if pd.isna(r[c]) else r[c]) for c in metrics_cluster_df.columns if c != "CLUSTER"}
+        for _, r in metrics_cluster_df.iterrows()
+        if r.get("CLUSTER") is not None
+    }
+    planning_metric_map = {
+        str(r["PLANNING_AREA"]): {c: (None if pd.isna(r[c]) else r[c]) for c in metrics_planning_df.columns if c != "PLANNING_AREA"}
+        for _, r in metrics_planning_df.iterrows()
+        if r.get("PLANNING_AREA") is not None
+    }
+    tract_metric_map = {
+        str(r["TRACT"]): {c: (None if pd.isna(r[c]) else r[c]) for c in metrics_tract_df.columns if c != "TRACT"}
+        for _, r in metrics_tract_df.iterrows()
+        if r.get("TRACT") is not None
+    }
+
+    # Merge into GeoJSON
+    clusters_choro = merge_metrics_into_geojson(clusters["geojson"], "CLUSTER", cluster_metric_map)
+    planning_choro = merge_metrics_into_geojson(planning["geojson"], "PLANNING_AREA", planning_metric_map)
+    tracts_choro   = merge_metrics_into_geojson(tracts["geojson"], "TRACT", tract_metric_map)
+
 
     (OUT_DIR / "choropleth_wards.geojson").write_text(json.dumps(wards_choro), encoding="utf-8")
     (OUT_DIR / "choropleth_ancs.geojson").write_text(json.dumps(ancs_choro), encoding="utf-8")
+    
+    (OUT_DIR / "choropleth_clusters.geojson").write_text(
+    json.dumps(clusters_choro, ensure_ascii=False, separators=(",", ":")),
+    encoding="utf-8",
+    )
+    (OUT_DIR / "choropleth_planning_areas.geojson").write_text(
+        json.dumps(planning_choro, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    (OUT_DIR / "choropleth_tracts.geojson").write_text(
+        json.dumps(tracts_choro, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
+
+    if not SNOW_ROUTES_PATH.exists():
+        raise FileNotFoundError(f"Missing {SNOW_ROUTES_PATH}")
+    (OUT_DIR / "snow_routes.geojson").write_text(
+        SNOW_ROUTES_PATH.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+
+    if not POPS_PATH.exists():
+        raise FileNotFoundError(f"Missing {POPS_PATH}")
+    (OUT_DIR / "populations.json").write_text(
+        POPS_PATH.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
 
     (OUT_DIR / "last_refresh.json").write_text(
         json.dumps(
