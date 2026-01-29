@@ -6,17 +6,36 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
-    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-    header { padding: 12px 14px; border-bottom: 1px solid #eee; background: #fff; }
-    h1 { font-size: 20px; margin: 0 0 6px; }
-    #map { height: calc(100vh - 150px); }
+    html, body { height: 100%; }
+	body {
+	  margin: 0;
+	  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+	  display: flex;
+	  flex-direction: column;
+	}
+	header {
+	  padding: 10px 12px;
+	  border-bottom: 1px solid rgba(0,0,0,0.08);
+	  background: rgba(255,255,255,0.86);
+	  backdrop-filter: blur(8px);
+	  box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+	}
+	h1 { font-size: 18px; margin: 0 0 4px; }
+	#map { flex: 1; min-height: 0; }
     .row { display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
     .small { font-size: 13px; color:#555; }
     label { font-size: 13px; color:#222; }
     select, input[type="checkbox"] { margin-left: 6px; }
     input[type="range"] { width: 240px; }
     .pill { padding: 2px 8px; border: 1px solid #ddd; border-radius: 999px; font-size: 12px; color:#333; background:#fafafa; }
-    .legend { background:#fff; padding:8px 10px; border:1px solid #ddd; border-radius:8px; font-size:12px; }
+    .legend {
+	  background: rgba(255,255,255,0.88);
+	  padding: 8px 10px;
+	  border: 1px solid rgba(0,0,0,0.12);
+	  border-radius: 8px;
+	  font-size: 12px;
+	  box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+	}
     .swatch { display:inline-block; width:12px; height:12px; vertical-align:middle; margin-right:6px; border:1px solid #bbb; }
   </style>
 </head>
@@ -156,6 +175,16 @@
       }
       return out;
     }
+	
+	map.createPane("routesPane");
+	map.getPane("routesPane").style.zIndex = 350;
+
+	map.createPane("choroPane");
+	map.getPane("choroPane").style.zIndex = 400;
+
+	map.createPane("pointsPane");
+	map.getPane("pointsPane").style.zIndex = 450;
+
 
     function legendControl() {
       const div = L.DomUtil.create('div', 'legend');
@@ -313,76 +342,102 @@
     }
 
     function updateChoropleth(feats) {
-      if (choroLayer) choroLayer.remove();
-      choroLayer = null;
+	  if (choroLayer) choroLayer.remove();
+	  choroLayer = null;
 
-      const geo = geoSel.value;
-      if (geo === "none") return;
+	  const geo = geoSel.value;
+	  if (geo === "none") return;
 
-      const metric = metricSel.value;
-      const base = (geo === "wards") ? wardsBase : ancsBase;
-      const keyField = (geo === "wards") ? "WARD" : "ANC_ID";
-      const pointsKey = (geo === "wards") ? "WARD" : "ANC_ID";
+	  const metric = metricSel.value;
 
-      const mm = computeMetrics(feats, pointsKey);
+	  let base = null;
+	  let keyField = null;
+	  let pointsKey = null;
 
-      // build a fresh copy so we can overwrite properties cleanly
-      const gj = JSON.parse(JSON.stringify(base));
+	  if (geo === "wards") {
+		base = wardsBase; keyField = "WARD"; pointsKey = "WARD";
+	  } else if (geo === "ancs") {
+		base = ancsBase; keyField = "ANC_ID"; pointsKey = "ANC_ID";
+	  } else if (geo === "clusters") {
+		base = clustersBase; keyField = "CLUSTER"; pointsKey = "CLUSTER";
+	  } else if (geo === "planning_areas") {
+		base = planningBase; keyField = "PLANNING_AREA"; pointsKey = "PLANNING_AREA";
+	  } else if (geo === "tracts") {
+		base = tractsBase; keyField = "TRACT"; pointsKey = "TRACT";
+	  }
 
-      // attach computed metrics to polygon props
-      for (const ft of gj.features) {
-        const k = ft.properties?.[keyField];
-        const m = (k != null) ? mm[String(k)] : null;
-        ft.properties = ft.properties || {};
-        ft.properties._m = m || null;
-      }
+	  if (!base) return;
 
-      // compute min/max for styling
-      const vals = [];
-      for (const ft of gj.features) {
-        const v = metricValue(ft.properties._m, metric);
-        if (isNum(v)) vals.push(v);
-      }
-      const min = vals.length ? Math.min(...vals) : 0;
-      const max = vals.length ? Math.max(...vals) : 1;
+	  const mm = computeMetrics(feats, pointsKey);
 
-      choroLayer = L.geoJSON(gj, {
-        pane: "choroPane",
-        style: (feature) => {
-          const v = metricValue(feature.properties?._m, metric);
-          let fill = "#eee";
-          if (isNum(v) && max > min) fill = ramp((v - min) / (max - min));
-          return { color: "#333", weight: 1, fillColor: fill, fillOpacity: 0.75 };
-        },
-        onEachFeature: (feature, layer) => {
-          const p = feature.properties || {};
-          const m = p._m;
-          let name = "";
-          if (geo === "wards") name = `Ward ${p.WARD}`;
-          else if (geo === "ancs") name = `ANC ${p.ANC_ID}`;
-          else if (geo === "clusters") name = `Cluster: ${p.CLUSTER ?? p.NAME ?? "—"}`;
-          else if (geo === "planning_areas") name = `Planning area: ${p.PLANNING_AREA ?? p.NAME ?? "—"}`;
-          else if (geo === "tracts") name = `Tract ${p.TRACT ?? p.NAME ?? "—"}`;
+	  // build a fresh copy so we can overwrite properties cleanly
+	  const gj = JSON.parse(JSON.stringify(base));
 
-          const v = metricValue(m, metric);
-          const shown = (metric === "pct_closed" && isNum(v)) ? `${v.toFixed(1)}%`
-                      : (isNum(v) ? v.toFixed(1) : "n/a");
+	  // attach computed metrics to polygon props
+	  for (const ft of gj.features) {
+		ft.properties = ft.properties || {};
 
-          const total = m?.total ?? 0;
-          const open = m?.open ?? 0;
-          const closed = m?.closed ?? 0;
+		// primary match: the intended keyField
+		const k0 = ft.properties[keyField];
 
-          layer.bindTooltip(
-            `<strong>${name}</strong><br/>
-             ${metricLabel(metric)}: ${shown}<br/>
-             total: ${total} · open: ${open} · closed: ${closed}`,
-            { sticky: true }
-          );
-        }
-      }).addTo(map);
+		// fallback match: NAME (helps if your source polygons only have NAME)
+		const k1 = ft.properties.NAME;
 
-      updateLegend(metric, min, max);
-    }
+		const m =
+		  (k0 != null && mm[String(k0)]) ? mm[String(k0)] :
+		  (k1 != null && mm[String(k1)]) ? mm[String(k1)] :
+		  null;
+
+		ft.properties._m = m;
+	  }
+
+	  // compute min/max for styling
+	  const vals = [];
+	  for (const ft of gj.features) {
+		const v = metricValue(ft.properties._m, metric);
+		if (isNum(v)) vals.push(v);
+	  }
+	  const min = vals.length ? Math.min(...vals) : 0;
+	  const max = vals.length ? Math.max(...vals) : 1;
+
+	  choroLayer = L.geoJSON(gj, {
+		pane: "choroPane",
+		style: (feature) => {
+		  const v = metricValue(feature.properties?._m, metric);
+		  let fill = "#eee";
+		  if (isNum(v) && max > min) fill = ramp((v - min) / (max - min));
+		  return { color: "#333", weight: 1, fillColor: fill, fillOpacity: 0.75 };
+		},
+		onEachFeature: (feature, layer) => {
+		  const p = feature.properties || {};
+		  const m = p._m;
+
+		  let name = "";
+		  if (geo === "wards") name = `Ward ${p.WARD}`;
+		  else if (geo === "ancs") name = `ANC ${p.ANC_ID}`;
+		  else if (geo === "clusters") name = `Cluster: ${p.CLUSTER ?? p.NAME ?? "—"}`;
+		  else if (geo === "planning_areas") name = `Planning area: ${p.PLANNING_AREA ?? p.NAME ?? "—"}`;
+		  else if (geo === "tracts") name = `Tract ${p.TRACT ?? p.NAME ?? "—"}`;
+
+		  const v = metricValue(m, metric);
+		  const shown = (metric === "pct_closed" && isNum(v)) ? `${v.toFixed(1)}%`
+					  : (isNum(v) ? v.toFixed(1) : "n/a");
+
+		  const total = m?.total ?? 0;
+		  const open = m?.open ?? 0;
+		  const closed = m?.closed ?? 0;
+
+		  layer.bindTooltip(
+			`<strong>${name}</strong><br/>
+			 ${metricLabel(metric)}: ${shown}<br/>
+			 total: ${total} · open: ${open} · closed: ${closed}`,
+			{ sticky: true }
+		  );
+		}
+	  }).addTo(map);
+
+	  updateLegend(metric, min, max);
+	}
 
     // debounce for slider drags
     let timer = null;
