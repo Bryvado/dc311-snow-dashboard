@@ -7,19 +7,59 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
     body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-    header { padding: 12px 14px; border-bottom: 1px solid #eee; background: #fff; }
-    h1 { font-size: 20px; margin: 0 0 6px; }
-    #map { height: calc(100vh - 215px); }
+    header{
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      z-index: 1000;
+      padding: 0;
+      border-bottom: none;
+      background: transparent;
+      pointer-events: none;
+    }
+    h1 { font-size: 18px; margin: 0 0 6px; }
+    #map { height: 100vh; }
 
     .row { display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
     .small { font-size: 13px; color:#555; }
     label { font-size: 13px; color:#222; }
     select, input[type="checkbox"] { margin-left: 6px; }
-    input[type="range"] { width: 240px; }
+    input[type="range"] { width: 220px; }
 
-    .pill { padding: 2px 8px; border: 1px solid #ddd; border-radius: 999px; font-size: 12px; color:#333; background:#fafafa; }
+    .pill { padding: 2px 8px; border: 1px solid rgba(0,0,0,0.14); border-radius: 999px; font-size: 12px; color:#333; background: rgba(255,255,255,0.72); }
     .btn { cursor:pointer; user-select:none; }
     .err { color:#b00020; font-weight: 600; }
+
+    .hud{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .panel{
+      pointer-events: auto;
+      background: rgba(255,255,255,0.82);
+      backdrop-filter: blur(3px);
+      border: 1px solid rgba(0,0,0,0.12);
+      border-radius: 12px;
+      padding: 10px 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    }
+
+    .panelTitle{
+      min-width: 260px;
+      flex: 1 1 320px;
+    }
+
+    .panelControls{
+      flex: 2 1 520px;
+    }
+
+    .panelTime{
+      flex: 2 1 520px;
+    }
 
     details.legend { border: 1px solid #ddd; border-radius: 10px; padding: 6px 10px; background:#fff; }
     details.legend > summary { cursor: pointer; font-size: 12px; font-weight: 700; }
@@ -48,10 +88,14 @@
 </head>
 <body>
   <header>
-    <h1>DC311 Snow Dashboard</h1>
+  <div class="hud">
+    <div class="panel panelTitle">
+      <h1>DC311 Snow Dashboard</h1>
     <div class="row small" id="meta">Loading…</div>
+    </div>
 
-    <div class="row" style="margin-top:10px;">
+    <div class="panel panelControls">
+      <div class="row">
       <label>Choropleth:
         <select id="geo">
           <option value="none">None</option>
@@ -95,8 +139,10 @@
 
       <span class="pill" id="countPill">Points: —</span>
     </div>
+    </div>
 
-    <div class="row" style="margin-top:10px;">
+    <div class="panel panelTime">
+      <div class="row">
       <label>From:
         <input type="range" id="start" />
         <span class="small" id="startLabel">—</span>
@@ -111,8 +157,11 @@
       <span class="pill btn" id="presetStorm">Storm preset (since Jan 24)</span>
       <span class="pill btn" id="presetAll">Full range</span>
     </div>
+    </div>
+  </div>
+</header>
 
-  <div id="map"></div>
+<div id="map"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
@@ -279,6 +328,25 @@
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap'
     }).addTo(map);
+
+
+
+    // Legend overlay (always visible, semi-transparent)
+    const legendCtrl = L.control({ position: "bottomright" });
+    legendCtrl.onAdd = () => {
+      const div = L.DomUtil.create("div", "legendOverlay");
+      div.id = "legendOverlay";
+      div.innerHTML = `<div class="title">Legend</div><div class="muted">Loading…</div>`;
+      L.DomEvent.disableClickPropagation(div);
+      L.DomEvent.disableScrollPropagation(div);
+      return div;
+    };
+    legendCtrl.addTo(map);
+
+    function setLegendHTML(html) {
+      const el = document.getElementById("legendOverlay");
+      if (el) el.innerHTML = html;
+    }
 
     let allPointsFC = null;
     let wardsBase = null;
@@ -579,23 +647,8 @@
 		 ${choroLegend}
 	   </div>`
 	);
-	
-	// Legend overlay (always visible, semi-transparent)
-	const legendCtrl = L.control({ position: "bottomright" });
-	legendCtrl.onAdd = () => {
-	  const div = L.DomUtil.create("div", "legendOverlay");
-	  div.id = "legendOverlay";
-	  div.innerHTML = `<div class="title">Legend</div><div class="muted">Loading…</div>`;
-	  L.DomEvent.disableClickPropagation(div);
-	  L.DomEvent.disableScrollPropagation(div);
-	  return div;
-	};
-	legendCtrl.addTo(map);
 
-	function setLegendHTML(html) {
-	  const el = document.getElementById("legendOverlay");
-	  if (el) el.innerHTML = html;
-	}
+        }
 
     // -------------------------
     // Debounced recompute
