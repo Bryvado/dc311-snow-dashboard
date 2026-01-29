@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "last_refresh_utc": "2026-01-29T19:53:37.097140+00:00",
+  "last_refresh_utc": "2026-01-29T19:56:19.650334+00:00",
   "layer_url": "https://maps2.dcgis.dc.gov/dcgis/rest/services/DCGIS_APPS/SR_30days_Open/MapServer/17",
   "records": 5396,
   "generated_files": [
@@ -9,11 +9,6 @@
     "metrics_anc.json",
     "choropleth_wards.geojson",
     "choropleth_ancs.geojson",
-    "choropleth_clusters.geojson",
-    "choropleth_planning_areas.geojson",
-    "choropleth_tracts.geojson",
-    "snow_routes.geojson",
-    "populations.json",
     "last_refresh.json"
   ]
 }
