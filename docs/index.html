@@ -5,93 +5,172 @@
   <title>DC311 Snow Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
   <style>
-    html, body { height: 100%; }
-	body {
-	  margin: 0;
-	  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-	  display: flex;
-	  flex-direction: column;
-	}
-	header {
-	  padding: 10px 12px;
-	  border-bottom: 1px solid rgba(0,0,0,0.08);
-	  background: rgba(255,255,255,0.86);
-	  backdrop-filter: blur(8px);
-	  box-shadow: 0 2px 10px rgba(0,0,0,0.06);
-	}
-	h1 { font-size: 18px; margin: 0 0 4px; }
-	#map { flex: 1; min-height: 0; }
-    .row { display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
-    .small { font-size: 13px; color:#555; }
-    label { font-size: 13px; color:#222; }
-    select, input[type="checkbox"] { margin-left: 6px; }
-    input[type="range"] { width: 240px; }
-    .pill { padding: 2px 8px; border: 1px solid #ddd; border-radius: 999px; font-size: 12px; color:#333; background:#fafafa; }
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(0,0,0,0.08);
+      background: rgba(255,255,255,0.86);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    }
+
+    h1 {
+      font-size: 18px;
+      margin: 0 0 4px;
+    }
+
+    #map {
+      flex: 1;
+      min-height: 0; /* critical: prevents “mystery whitespace” at bottom */
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .small {
+      font-size: 13px;
+      color: #555;
+    }
+
+    label {
+      font-size: 13px;
+      color: #222;
+      white-space: nowrap;
+    }
+
+    select, input[type="checkbox"] {
+      margin-left: 6px;
+    }
+
+    input[type="range"] {
+      width: 240px;
+    }
+
+    button {
+      font-size: 12px;
+      padding: 4px 8px;
+      border: 1px solid rgba(0,0,0,0.18);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.9);
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: rgba(255,255,255,1);
+    }
+
+    .pill {
+      padding: 2px 8px;
+      border: 1px solid #ddd;
+      border-radius: 999px;
+      font-size: 12px;
+      color: #333;
+      background: #fafafa;
+      white-space: nowrap;
+    }
+
     .legend {
-	  background: rgba(255,255,255,0.88);
-	  padding: 8px 10px;
-	  border: 1px solid rgba(0,0,0,0.12);
-	  border-radius: 8px;
-	  font-size: 12px;
-	  box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-	}
-    .swatch { display:inline-block; width:12px; height:12px; vertical-align:middle; margin-right:6px; border:1px solid #bbb; }
+      background: rgba(255,255,255,0.88);
+      padding: 8px 10px;
+      border: 1px solid rgba(0,0,0,0.12);
+      border-radius: 8px;
+      font-size: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    }
+
+    .swatch {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      vertical-align: middle;
+      margin-right: 6px;
+      border: 1px solid #bbb;
+    }
   </style>
 </head>
 <body>
-  <header>
-    <h1>DC311 Snow Dashboard</h1>
-    <div class="row small" id="meta">Loading…</div>
+  <div id="app">
+    <div id="mapWrap">
+      <div id="map"></div>
 
-    <div class="row" style="margin-top:10px;">
-      <label>Choropleth:
-        <select id="geo">
-          <option value="none">None</option>
-          <option value="wards" selected>Wards</option>
-          <option value="ancs">ANCs</option>
-          <option value="clusters">Neighborhood Clusters</option>
-          <option value="planning_areas">Planning Areas</option>
-          <option value="tracts">Census Tracts</option>
-        </select>
-      </label>
+      <!-- Floating controls panel (replaces the old <header>) -->
+      <div id="ui" class="panel">
+        <div class="uiTop">
+          <div class="title">DC311 Snow Dashboard</div>
+          <div class="row small" id="meta">Loading…</div>
+        </div>
 
-      <label>Metric:
-        <select id="metric">
-          <option value="median_ttc_hours" selected>Median time-to-close (hrs)</option>
-          <option value="mean_ttc_hours">Mean time-to-close (hrs)</option>
-          <option value="pct_closed">% closed</option>
-          <option value="open">Open count</option>
-          <option value="total">Total requests</option>
-        </select>
-      </label>
+        <div class="row" style="margin-top:8px;">
+          <label>Choropleth:
+            <select id="geo">
+              <option value="none">None</option>
+              <option value="wards" selected>Wards</option>
+              <option value="ancs">ANCs</option>
+              <option value="clusters">Neighborhood Clusters</option>
+              <option value="planning_areas">Planning Areas</option>
+              <option value="tracts">Census Tracts</option>
+            </select>
+          </label>
 
-      <label class="pill">
-        <input type="checkbox" id="showPoints" checked />
-        Show points
-      </label>
+          <label>Metric:
+            <select id="metric">
+              <option value="median_ttc_hours" selected>Median time-to-close (hrs)</option>
+              <option value="mean_ttc_hours">Mean time-to-close (hrs)</option>
+              <option value="pct_closed">% closed</option>
+              <option value="open">Open count</option>
+              <option value="total">Total requests</option>
+            </select>
+          </label>
 
-      <label class="pill">
-        <input type="checkbox" id="showRoutes" />
-        Snow routes
-      </label>
+          <label class="pill">
+            <input type="checkbox" id="showPoints" checked />
+            Show points
+          </label>
 
-      <span class="pill" id="countPill">Points: —</span>
+          <label class="pill">
+            <input type="checkbox" id="showRoutes" />
+            Snow routes
+          </label>
+
+          <span class="pill" id="countPill">Points: —</span>
+        </div>
+
+        <div class="row" style="margin-top:8px;">
+          <label>From:
+            <input type="range" id="start" />
+            <span class="small" id="startLabel">—</span>
+          </label>
+          <label>To:
+            <input type="range" id="end" />
+            <span class="small" id="endLabel">—</span>
+          </label>
+
+          <!-- optional: if you already wired these in JS, keep them; otherwise delete -->
+          <button id="stormPreset" type="button">Storm preset (since Jan 24)</button>
+          <button id="fullRange" type="button">Full range</button>
+        </div>
+      </div>
+
+      <!-- Floating legend (always visible; JS fills contents) -->
+      <div id="legend" class="legend panel"></div>
     </div>
-
-    <div class="row" style="margin-top:10px;">
-      <label>From:
-        <input type="range" id="start" />
-        <span class="small" id="startLabel">—</span>
-      </label>
-      <label>To:
-        <input type="range" id="end" />
-        <span class="small" id="endLabel">—</span>
-      </label>
-    </div>
-  </header>
-
-  <div id="map"></div>
+  </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
