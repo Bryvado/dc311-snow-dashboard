@@ -302,7 +302,6 @@
       return out;
     }
 
-
     function legendControl() {
       const div = L.DomUtil.create('div', 'legend');
       div.innerHTML = `<div><strong>Legend</strong></div><div class="small" id="legendMetric"></div><div id="legendRamp"></div>`;
@@ -421,7 +420,7 @@
       pointsLayer = L.geoJSON(fc, {
         pane: "pointsPane",
         interactive: true,
-      
+
         pointToLayer: (feature, latlng) => {
           const closed = feature.properties?.closed === true;
           return L.circleMarker(latlng, {
@@ -434,7 +433,7 @@
             interactive: true
           });
         },
-      
+
         onEachFeature: (feature, layer) => {
           const p = feature.properties || {};
           const status  = p.SERVICEORDERSTATUS ?? (p.closed ? "Closed" : "Open");
@@ -444,7 +443,7 @@
           const anc  = p.ANC_ID ?? "—";
           const addr = p.STREETADDRESS ?? "";
           const desc = p.SERVICECODEDESCRIPTION ?? "";
-      
+
           layer.bindPopup(
             `<strong>${status}</strong><br/>
              ${desc}<br/>
@@ -454,78 +453,19 @@
              Created: ${created}<br/>
              Resolved: ${resolved}`
           );
-      
+
           // Tooltip: only show for points when choropleth is OFF (geo = "none")
           layer.unbindTooltip();
           if (geoSel.value === "none") {
             const tipDesc = (desc || "").trim();
             const tipAddr = (addr || "").trim();
             const mid = [tipDesc, tipAddr].filter(Boolean).join("<br/>");
-      
-            layer.bindTooltip(
-              `<strong>${status}</strong>${mid ? "<br/>" + mid : ""}<br/>Created: ${created}<br/>Resolved: ${resolved}`,
-              { sticky: true, direction: "top", opacity: 0.95 }
-            );
-          }
-        }
-      }).addTo(map);pointsLayer = L.geoJSON(fc, {
-        pane: "pointsPane",
-        interactive: true,
-        pointToLayer: (feature, latlng) => {
-          const closed = feature.properties?.closed === true;
-          return L.circleMarker(latlng, {
-            radius: 4,
-            weight: 0.5,
-            opacity: 0.8,
-            fillOpacity: 0.7,
-            // simple status styling
-            fillColor: closed ? "#2ca02c" : "#d62728",
-            color: "#222",
-            interactive: true
-          });
-        },
-        onEachFeature: (feature, layer) => {
-          const p = feature.properties || {};
-          const status  = p.SERVICEORDERSTATUS ?? (p.closed ? "Closed" : "Open");
-          const created = (typeof p.add_ms === "number") ? fmtDT(p.add_ms) : "—";
-          const resolved = (typeof p.res_ms === "number") ? fmtDT(p.res_ms) : "—";
-          const ward = p.WARD ?? "—";
-          const anc  = p.ANC_ID ?? "—";
-          const addr = p.STREETADDRESS ?? "";
-          const desc = p.SERVICECODEDESCRIPTION ?? "";
-        
-          // ✅ Popup: pass ONE string argument, then close the call
-          layer.bindPopup(
-            `<strong>${status}</strong><br/>
-             ${desc}<br/>
-             ${addr ? addr + "<br/>" : ""}
-             Ward: ${ward}<br/>
-             ANC: ${anc}<br/>
-             Created: ${created}<br/>
-             Resolved: ${resolved}`
-          );
-        
-          // ✅ Tooltip: only when choropleth is OFF (geo = "none")
-          layer.unbindTooltip();
-          if (geoSel.value === "none") {
-            const tipDesc = (desc || "").trim();
-            const tipAddr = (addr || "").trim();
-            const mid = [tipDesc, tipAddr].filter(Boolean).join("<br/>");
-        
-            layer.bindTooltip(
-              `<strong>${status}</strong>${mid ? "<br/>" + mid : ""}<br/>Created: ${created}<br/>Resolved: ${resolved}`,
-              { sticky: true, direction: "top", opacity: 0.95 }
-            );
-          }
-        }
-          layer.unbindTooltip();
-          if (geoSel.value === "none") {
-            layer.bindTooltip(
-              `<strong>${status}</strong><br/>Created: ${created}<br/>Resolved: ${resolved}`,
-              { sticky: true, direction: "top", opacity: 0.95 }
-            );
-          }
 
+            layer.bindTooltip(
+              `<strong>${status}</strong>${mid ? "<br/>" + mid : ""}<br/>Created: ${created}<br/>Resolved: ${resolved}`,
+              { sticky: true, direction: "top", opacity: 0.95 }
+            );
+          }
         }
       }).addTo(map);
     }
@@ -644,7 +584,6 @@
              ${metricLabel(metric)}: ${shown}`,
             { sticky: true, direction: "top", opacity: 0.95 }
           );
-
         }
       }).addTo(map);
 
