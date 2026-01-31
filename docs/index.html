@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>❄️ Unfreeze D.C. </title>
+  <title>❄️ Unfreeze D.C. ❄️</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -445,7 +445,7 @@
           const desc = p.SERVICECODEDESCRIPTION ?? "";
 
           layer.bindPopup(
-                      // Hover tooltip only when choropleth is "None"
+          // Hover tooltip only when choropleth is "None"
           layer.unbindTooltip();
           if (geoSel.value === "none") {
             const tipDesc = (desc || "").trim();
