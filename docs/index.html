@@ -412,9 +412,11 @@ let allPointsFC = null;
       }
 
       const fc = { type: "FeatureCollection", features: feats };
+      const showTooltips = geoSel.value === "none";
 
       pointsLayer = L.geoJSON(fc, {
         pane: "pointsPane",
+        interactive: true,
         pointToLayer: (feature, latlng) => {
           const closed = feature.properties?.closed === true;
           return L.circleMarker(latlng, {
@@ -424,7 +426,8 @@ let allPointsFC = null;
             fillOpacity: 0.7,
             // simple status styling
             fillColor: closed ? "#2ca02c" : "#d62728",
-            color: "#222"
+            color: "#222",
+            interactive: true
           });
         },
         onEachFeature: (feature, layer) => {
@@ -446,10 +449,8 @@ let allPointsFC = null;
              Resolved: ${resolved}`
           );
 
-          // Add tooltip with key information
-          const geo = geoSel.value;
           // Only show point tooltips when choropleth is "none"
-          if (geo === "none") {
+          if (showTooltips) {
             let tooltipText = `<strong>${status}</strong>`;
             if (p.closed) {
               tooltipText += `<br/>Collected`;
