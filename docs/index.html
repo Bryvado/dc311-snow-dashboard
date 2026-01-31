@@ -436,42 +436,38 @@
         },
         onEachFeature: (feature, layer) => {
           const p = feature.properties || {};
-          const status = p.SERVICEORDERSTATUS ?? (p.closed ? "Closed" : "Open");
+          const status  = p.SERVICEORDERSTATUS ?? (p.closed ? "Closed" : "Open");
           const created = (typeof p.add_ms === "number") ? fmtDT(p.add_ms) : "—";
           const resolved = (typeof p.res_ms === "number") ? fmtDT(p.res_ms) : "—";
           const ward = p.WARD ?? "—";
-          const anc = p.ANC_ID ?? "—";
+          const anc  = p.ANC_ID ?? "—";
           const addr = p.STREETADDRESS ?? "";
           const desc = p.SERVICECODEDESCRIPTION ?? "";
-
+        
+          // ✅ Popup: pass ONE string argument, then close the call
           layer.bindPopup(
-          // Hover tooltip only when choropleth is "None"
-          layer.unbindTooltip();
-          if (geoSel.value === "none") {
-            const tipDesc = (desc || "").trim();
-            const tipAddr = (addr || "").trim();
-            const mid = [tipDesc, tipAddr].filter(Boolean).join("<br/>");
-
-            layer.bindTooltip(
-              `<strong>${status}</strong>${mid ? "<br/>" + mid : ""}<br/>Created: ${created}<br/>Resolved: ${resolved}`,
-              { sticky: true, direction: "top", opacity: 0.95 }
-            );
-          }
             `<strong>${status}</strong><br/>
              ${desc}<br/>
-          // Tooltip: only show for points when choropleth is OFF (geo = "none")
+             ${addr ? addr + "<br/>" : ""}
+             Ward: ${ward}<br/>
+             ANC: ${anc}<br/>
+             Created: ${created}<br/>
+             Resolved: ${resolved}`
+          );
+        
+          // ✅ Tooltip: only when choropleth is OFF (geo = "none")
           layer.unbindTooltip();
-
           if (geoSel.value === "none") {
             const tipDesc = (desc || "").trim();
             const tipAddr = (addr || "").trim();
             const mid = [tipDesc, tipAddr].filter(Boolean).join("<br/>");
-
+        
             layer.bindTooltip(
               `<strong>${status}</strong>${mid ? "<br/>" + mid : ""}<br/>Created: ${created}<br/>Resolved: ${resolved}`,
               { sticky: true, direction: "top", opacity: 0.95 }
             );
           }
+        }
              ${addr}<br/>
              Ward ${ward} · ANC ${anc}<br/>
              Created: ${created}<br/>
