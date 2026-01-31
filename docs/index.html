@@ -445,6 +445,18 @@
           const desc = p.SERVICECODEDESCRIPTION ?? "";
 
           layer.bindPopup(
+                      // Hover tooltip only when choropleth is "None"
+          layer.unbindTooltip();
+          if (geoSel.value === "none") {
+            const tipDesc = (desc || "").trim();
+            const tipAddr = (addr || "").trim();
+            const mid = [tipDesc, tipAddr].filter(Boolean).join("<br/>");
+
+            layer.bindTooltip(
+              `<strong>${status}</strong>${mid ? "<br/>" + mid : ""}<br/>Created: ${created}<br/>Resolved: ${resolved}`,
+              { sticky: true, direction: "top", opacity: 0.95 }
+            );
+          }
             `<strong>${status}</strong><br/>
              ${desc}<br/>
           // Tooltip: only show for points when choropleth is OFF (geo = "none")
