@@ -451,10 +451,13 @@ let allPointsFC = null;
              Resolved: ${resolved}`
           );
 
-          layer.bindTooltip(
-            `<strong>${status}</strong><br/>${desc || ""}`.trim(),
-            { sticky: true, direction: "top", opacity: 0.95 }
-          );
+          layer.unbindTooltip();
+          if (geoSel.value === "none") {
+            layer.bindTooltip(
+              `<strong>${status}</strong><br/>Created: ${created}<br/>Resolved: ${resolved}`,
+              { sticky: true, direction: "top", opacity: 0.95 }
+            );
+          }
 
         }
       }).addTo(map);
