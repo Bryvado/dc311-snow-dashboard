@@ -553,21 +553,14 @@ let allPointsFC = null;
 		  const closed = m?.closed ?? 0;
 
           layer.bindPopup(
-            `<strong>${status}</strong><br/>
-             ${desc}<br/>
-             ${addr}<br/>
-             Ward ${ward} · ANC ${anc}<br/>
-             Created: ${created}<br/>
-             Resolved: ${resolved}`
+            `<strong>${name}</strong><br/>
+             ${metricLabel(metric)}: ${shown}<br/>
+             Total: ${total} · Open: ${open} · Closed: ${closed}`
           );
 
           layer.bindTooltip(
-            `<strong>${status}</strong><br/>
-             ${desc}<br/>
-             ${addr}<br/>
-             Ward ${ward} · ANC ${anc}<br/>
-             Created: ${created}<br/>
-             Resolved: ${resolved}`,
+            `<strong>${name}</strong><br/>
+             ${metricLabel(metric)}: ${shown}`,
             { sticky: true, direction: "top", opacity: 0.95 }
           );
 		}
