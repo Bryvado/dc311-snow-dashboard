@@ -445,6 +445,31 @@ let allPointsFC = null;
              Created: ${created}<br/>
              Resolved: ${resolved}`
           );
+
+          // Add tooltip with key information
+          const geo = geoSel.value;
+          // Only show point tooltips when choropleth is "none"
+          if (geo === "none") {
+            let tooltipText = `<strong>${status}</strong>`;
+            if (p.closed) {
+              tooltipText += `<br/>Collected`;
+              if (isNum(p.ttc_hours)) {
+                tooltipText += `: ${p.ttc_hours.toFixed(1)} hrs`;
+              }
+            } else {
+              tooltipText += `<br/>Pending`;
+              if (isNum(p.open_age_hours)) {
+                tooltipText += `: ${p.open_age_hours.toFixed(1)} hrs`;
+              }
+            }
+            if (addr) tooltipText += `<br/>${addr}`;
+
+            layer.bindTooltip(tooltipText, { 
+              sticky: true, 
+              direction: "top", 
+              opacity: 0.95 
+            });
+          }
         }
       }).addTo(map);
     }
