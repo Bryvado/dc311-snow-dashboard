@@ -445,6 +445,19 @@ let allPointsFC = null;
           layer.bindPopup(
             `<strong>${status}</strong><br/>
              ${desc}<br/>
+          // Tooltip: only show for points when choropleth is OFF (geo = "none")
+          layer.unbindTooltip();
+
+          if (geoSel.value === "none") {
+            const tipDesc = (desc || "").trim();
+            const tipAddr = (addr || "").trim();
+            const mid = [tipDesc, tipAddr].filter(Boolean).join("<br/>");
+
+            layer.bindTooltip(
+              `<strong>${status}</strong>${mid ? "<br/>" + mid : ""}<br/>Created: ${created}<br/>Resolved: ${resolved}`,
+              { sticky: true, direction: "top", opacity: 0.95 }
+            );
+          }
              ${addr}<br/>
              Ward ${ward} · ANC ${anc}<br/>
              Created: ${created}<br/>
