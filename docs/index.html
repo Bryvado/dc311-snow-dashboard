@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>DC311 Snow Dashboard</title>
+  <title>❄️ Unfreeze D.C. ❄️</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -552,12 +552,24 @@ let allPointsFC = null;
 		  const open = m?.open ?? 0;
 		  const closed = m?.closed ?? 0;
 
-		  layer.bindTooltip(
-			`<strong>${name}</strong><br/>
-			 ${metricLabel(metric)}: ${shown}<br/>
-			 total: ${total} · open: ${open} · closed: ${closed}`,
-			{ sticky: true }
-		  );
+          layer.bindPopup(
+            `<strong>${status}</strong><br/>
+             ${desc}<br/>
+             ${addr}<br/>
+             Ward ${ward} · ANC ${anc}<br/>
+             Created: ${created}<br/>
+             Resolved: ${resolved}`
+          );
+
+          layer.bindTooltip(
+            `<strong>${status}</strong><br/>
+             ${desc}<br/>
+             ${addr}<br/>
+             Ward ${ward} · ANC ${anc}<br/>
+             Created: ${created}<br/>
+             Resolved: ${resolved}`,
+            { sticky: true, direction: "top", opacity: 0.95 }
+          );
 		}
 	  }).addTo(map);
 
