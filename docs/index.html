@@ -102,7 +102,7 @@
       margin-right: 6px;
       border: 1px solid #bbb;
     }
-  
+
     /* --- floating layout overrides (map fills viewport; UI/legend float) --- */
     #app { flex: 1; min-height: 0; height: 100%; }
     #mapWrap { position: relative; height: 100%; }
@@ -315,23 +315,25 @@
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap'
     }).addTo(map);
-	
-	map.createPane("routesPane");
-	map.getPane("routesPane").style.zIndex = 350;
 
-	map.createPane("choroPane");
-	map.getPane("choroPane").style.zIndex = 400;
+    map.createPane("routesPane");
+    map.getPane("routesPane").style.zIndex = 350;
 
-	map.createPane("pointsPane");
-	map.getPane("pointsPane").style.zIndex = 450;
+    map.createPane("choroPane");
+    map.getPane("choroPane").style.zIndex = 400;
 
-	map.getPane("tooltipPane").style.zIndex = 1200;
-	map.getPane("popupPane").style.zIndex = 1200;
+    map.createPane("pointsPane");
+    map.getPane("pointsPane").style.zIndex = 450;
+
+    map.getPane("tooltipPane").style.zIndex = 1200;
+    map.getPane("popupPane").style.zIndex = 1200;
+
     const legendHost = document.getElementById("legend");
     if (legendHost) {
       legendHost.innerHTML = `<div><strong>Legend</strong></div><div class="small" id="legendMetric"></div><div id="legendRamp"></div>`;
     }
-let allPointsFC = null;
+
+    let allPointsFC = null;
     let wardsBase = null;
     let ancsBase = null;
     let clustersBase = null;
@@ -494,90 +496,90 @@ let allPointsFC = null;
     }
 
     function updateChoropleth(feats) {
-	  if (choroLayer) choroLayer.remove();
-	  choroLayer = null;
+      if (choroLayer) choroLayer.remove();
+      choroLayer = null;
 
-	  const geo = geoSel.value;
-	  if (geo === "none") return;
+      const geo = geoSel.value;
+      if (geo === "none") return;
 
-	  const metric = metricSel.value;
+      const metric = metricSel.value;
 
-	  let base = null;
-	  let keyField = null;
-	  let pointsKey = null;
+      let base = null;
+      let keyField = null;
+      let pointsKey = null;
 
-	  if (geo === "wards") {
-		base = wardsBase; keyField = "WARD"; pointsKey = "WARD";
-	  } else if (geo === "ancs") {
-		base = ancsBase; keyField = "ANC_ID"; pointsKey = "ANC_ID";
-	  } else if (geo === "clusters") {
-		base = clustersBase; keyField = "CLUSTER"; pointsKey = "CLUSTER";
-	  } else if (geo === "planning_areas") {
-		base = planningBase; keyField = "PLANNING_AREA"; pointsKey = "PLANNING_AREA";
-	  } else if (geo === "tracts") {
-		base = tractsBase; keyField = "TRACT"; pointsKey = "TRACT";
-	  }
+      if (geo === "wards") {
+        base = wardsBase; keyField = "WARD"; pointsKey = "WARD";
+      } else if (geo === "ancs") {
+        base = ancsBase; keyField = "ANC_ID"; pointsKey = "ANC_ID";
+      } else if (geo === "clusters") {
+        base = clustersBase; keyField = "CLUSTER"; pointsKey = "CLUSTER";
+      } else if (geo === "planning_areas") {
+        base = planningBase; keyField = "PLANNING_AREA"; pointsKey = "PLANNING_AREA";
+      } else if (geo === "tracts") {
+        base = tractsBase; keyField = "TRACT"; pointsKey = "TRACT";
+      }
 
-	  if (!base) return;
+      if (!base) return;
 
-	  const mm = computeMetrics(feats, pointsKey);
+      const mm = computeMetrics(feats, pointsKey);
 
-	  // build a fresh copy so we can overwrite properties cleanly
-	  const gj = JSON.parse(JSON.stringify(base));
+      // build a fresh copy so we can overwrite properties cleanly
+      const gj = JSON.parse(JSON.stringify(base));
 
-	  // attach computed metrics to polygon props
-	  for (const ft of gj.features) {
-		ft.properties = ft.properties || {};
+      // attach computed metrics to polygon props
+      for (const ft of gj.features) {
+        ft.properties = ft.properties || {};
 
-		// primary match: the intended keyField
-		const k0 = ft.properties[keyField];
+        // primary match: the intended keyField
+        const k0 = ft.properties[keyField];
 
-		// fallback match: NAME (helps if your source polygons only have NAME)
-		const k1 = ft.properties.NAME;
+        // fallback match: NAME (helps if your source polygons only have NAME)
+        const k1 = ft.properties.NAME;
 
-		const m =
-		  (k0 != null && mm[String(k0)]) ? mm[String(k0)] :
-		  (k1 != null && mm[String(k1)]) ? mm[String(k1)] :
-		  null;
+        const m =
+          (k0 != null && mm[String(k0)]) ? mm[String(k0)] :
+          (k1 != null && mm[String(k1)]) ? mm[String(k1)] :
+          null;
 
-		ft.properties._m = m;
-	  }
+        ft.properties._m = m;
+      }
 
-	  // compute min/max for styling
-	  const vals = [];
-	  for (const ft of gj.features) {
-		const v = metricValue(ft.properties._m, metric);
-		if (isNum(v)) vals.push(v);
-	  }
-	  const min = vals.length ? Math.min(...vals) : 0;
-	  const max = vals.length ? Math.max(...vals) : 1;
+      // compute min/max for styling
+      const vals = [];
+      for (const ft of gj.features) {
+        const v = metricValue(ft.properties._m, metric);
+        if (isNum(v)) vals.push(v);
+      }
+      const min = vals.length ? Math.min(...vals) : 0;
+      const max = vals.length ? Math.max(...vals) : 1;
 
-	  choroLayer = L.geoJSON(gj, {
-		pane: "choroPane",
-		style: (feature) => {
-		  const v = metricValue(feature.properties?._m, metric);
-		  let fill = "#eee";
-		  if (isNum(v) && max > min) fill = ramp((v - min) / (max - min));
-		  return { color: "#333", weight: 1, fillColor: fill, fillOpacity: 0.75 };
-		},
-		onEachFeature: (feature, layer) => {
-		  const p = feature.properties || {};
-		  const m = p._m;
+      choroLayer = L.geoJSON(gj, {
+        pane: "choroPane",
+        style: (feature) => {
+          const v = metricValue(feature.properties?._m, metric);
+          let fill = "#eee";
+          if (isNum(v) && max > min) fill = ramp((v - min) / (max - min));
+          return { color: "#333", weight: 1, fillColor: fill, fillOpacity: 0.75 };
+        },
+        onEachFeature: (feature, layer) => {
+          const p = feature.properties || {};
+          const m = p._m;
 
-		  let name = "";
-		  if (geo === "wards") name = `Ward ${p.WARD}`;
-		  else if (geo === "ancs") name = `ANC ${p.ANC_ID}`;
-		  else if (geo === "clusters") name = `Cluster: ${p.CLUSTER ?? p.NAME ?? "—"}`;
-		  else if (geo === "planning_areas") name = `Planning area: ${p.PLANNING_AREA ?? p.NAME ?? "—"}`;
-		  else if (geo === "tracts") name = `Tract ${p.TRACT ?? p.NAME ?? "—"}`;
+          let name = "";
+          if (geo === "wards") name = `Ward ${p.WARD}`;
+          else if (geo === "ancs") name = `ANC ${p.ANC_ID}`;
+          else if (geo === "clusters") name = `Cluster: ${p.CLUSTER ?? p.NAME ?? "—"}`;
+          else if (geo === "planning_areas") name = `Planning area: ${p.PLANNING_AREA ?? p.NAME ?? "—"}`;
+          else if (geo === "tracts") name = `Tract ${p.TRACT ?? p.NAME ?? "—"}`;
 
-		  const v = metricValue(m, metric);
-		  const shown = (metric === "pct_closed" && isNum(v)) ? `${v.toFixed(1)}%`
-					  : (isNum(v) ? v.toFixed(1) : "n/a");
+          const v = metricValue(m, metric);
+          const shown = (metric === "pct_closed" && isNum(v)) ? `${v.toFixed(1)}%`
+                      : (isNum(v) ? v.toFixed(1) : "n/a");
 
-		  const total = m?.total ?? 0;
-		  const open = m?.open ?? 0;
-		  const closed = m?.closed ?? 0;
+          const total = m?.total ?? 0;
+          const open = m?.open ?? 0;
+          const closed = m?.closed ?? 0;
 
           layer.bindPopup(
             `<strong>${name}</strong><br/>
@@ -591,14 +593,14 @@ let allPointsFC = null;
             { sticky: true, direction: "top", opacity: 0.95 }
           );
 
-		}
-	  }).addTo(map);
+        }
+      }).addTo(map);
 
-	  updateLegend(metric, min, max);
-	}
-	
-	const stormPresetBtn = document.getElementById("stormPreset");
-	const fullRangeBtn = document.getElementById("fullRange");
+      updateLegend(metric, min, max);
+    }
+
+    const stormPresetBtn = document.getElementById("stormPreset");
+    const fullRangeBtn = document.getElementById("fullRange");
 
     // debounce for slider drags
     let timer = null;
@@ -661,23 +663,23 @@ let allPointsFC = null;
       showPoints.addEventListener("change", recompute);
       showRoutes.addEventListener("change", () => { updateRoutes(); });
     }
-	
-	function applyRange(a, b) {
-	  startSlider.value = String(a);
-	  endSlider.value = String(b);
-	  recompute();
-	}
 
-	stormPresetBtn?.addEventListener("click", () => {
-	  // Jan 24 of the year matching your data max timestamp
-	  const dMax = new Date(Number(endSlider.max || Date.now()));
-	  const stormStart = new Date(dMax.getFullYear(), 0, 24, 0, 0, 0).getTime();
-	  applyRange(Math.max(Number(startSlider.min), stormStart), Number(endSlider.max));
-	});
+    function applyRange(a, b) {
+      startSlider.value = String(a);
+      endSlider.value = String(b);
+      recompute();
+    }
 
-	fullRangeBtn?.addEventListener("click", () => {
-	  applyRange(Number(startSlider.min), Number(endSlider.max));
-	});
+    stormPresetBtn?.addEventListener("click", () => {
+      // Jan 24 of the year matching your data max timestamp
+      const dMax = new Date(Number(endSlider.max || Date.now()));
+      const stormStart = new Date(dMax.getFullYear(), 0, 24, 0, 0, 0).getTime();
+      applyRange(Math.max(Number(startSlider.min), stormStart), Number(endSlider.max));
+    });
+
+    fullRangeBtn?.addEventListener("click", () => {
+      applyRange(Number(startSlider.min), Number(endSlider.max));
+    });
 
     boot().catch(err => {
       document.getElementById("meta").textContent = "Failed to load data files. Check docs/data outputs.";
