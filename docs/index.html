@@ -102,6 +102,53 @@
       margin-right: 6px;
       border: 1px solid #bbb;
     }
+  
+    /* --- floating layout overrides (map fills viewport; UI/legend float) --- */
+    #app { flex: 1; min-height: 0; height: 100%; }
+    #mapWrap { position: relative; height: 100%; }
+    #map { position: absolute; inset: 0; width: 100%; height: 100%; flex: none; }
+
+    .panel {
+      background: rgba(255,255,255,0.82);
+      backdrop-filter: blur(7px);
+      border: 1px solid rgba(0,0,0,0.10);
+      border-radius: 12px;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.10);
+    }
+
+    #ui {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      max-width: 1200px;
+      padding: 10px 12px;
+      z-index: 1000;
+    }
+
+    .uiTop {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 6px;
+    }
+
+    .title {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    #legend {
+      position: absolute;
+      right: 10px;
+      bottom: 10px;
+      z-index: 1000;
+      max-width: 260px;
+      max-height: 40vh;
+      overflow: auto;
+    }
+
   </style>
 </head>
 <body>
@@ -277,12 +324,11 @@
 
 	map.createPane("pointsPane");
 	map.getPane("pointsPane").style.zIndex = 450;
-
-    const legend = L.control({ position: "bottomright" });
-    legend.onAdd = legendControl;
-    legend.addTo(map);
-
-    let allPointsFC = null;
+    const legendHost = document.getElementById("legend");
+    if (legendHost) {
+      legendHost.innerHTML = `<div><strong>Legend</strong></div><div class="small" id="legendMetric"></div><div id="legendRamp"></div>`;
+    }
+let allPointsFC = null;
     let wardsBase = null;
     let ancsBase = null;
     let clustersBase = null;
@@ -517,6 +563,9 @@
 
 	  updateLegend(metric, min, max);
 	}
+	
+	const stormPresetBtn = document.getElementById("stormPreset");
+	const fullRangeBtn = document.getElementById("fullRange");
 
     // debounce for slider drags
     let timer = null;
@@ -579,6 +628,23 @@
       showPoints.addEventListener("change", recompute);
       showRoutes.addEventListener("change", () => { updateRoutes(); });
     }
+	
+	function applyRange(a, b) {
+	  startSlider.value = String(a);
+	  endSlider.value = String(b);
+	  recompute();
+	}
+
+	stormPresetBtn?.addEventListener("click", () => {
+	  // Jan 24 of the year matching your data max timestamp
+	  const dMax = new Date(Number(endSlider.max || Date.now()));
+	  const stormStart = new Date(dMax.getFullYear(), 0, 24, 0, 0, 0).getTime();
+	  applyRange(Math.max(Number(startSlider.min), stormStart), Number(endSlider.max));
+	});
+
+	fullRangeBtn?.addEventListener("click", () => {
+	  applyRange(Number(startSlider.min), Number(endSlider.max));
+	});
 
     boot().catch(err => {
       document.getElementById("meta").textContent = "Failed to load data files. Check docs/data outputs.";
