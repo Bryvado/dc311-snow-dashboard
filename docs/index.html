@@ -471,11 +471,14 @@
               { sticky: true, direction: "top", opacity: 0.95, pane: "tooltipPane" }
             );
           
-            layer.on("mouseover", () => layer.openTooltip());
-            layer.on("mouseout",  () => layer.closeTooltip());
+          layer.on("mouseover", () => layer.openTooltip());
+          layer.on("mouseout",  () => layer.closeTooltip());
           } else {
             if (layer.closeTooltip) layer.closeTooltip();
           }
+        }  // ← ADD: closes onEachFeature callback
+      });  // ← ADD: closes L.geoJSON options object
+    }      // ← This existing brace now correctly closes updatePointLayer
 
     function updateLegend(metric, min, max) {
       document.getElementById("legendMetric").textContent = metricLabel(metric);
