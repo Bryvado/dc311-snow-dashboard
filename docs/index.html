@@ -318,11 +318,15 @@
     map.createPane("routesPane");
     map.getPane("routesPane").style.zIndex = 350;
 
-    map.createPane("choroPane");
-    map.getPane("choroPane").style.zIndex = 400;
-
     map.createPane("pointsPane");
-    map.getPane("pointsPane").style.zIndex = 450;
+    const pp = map.getPane("pointsPane");
+    pp.style.zIndex = 450;
+    pp.style.pointerEvents = "auto";   // ← ADD THIS
+    
+    map.createPane("choroPane");
+    const cp = map.getPane("choroPane");
+    cp.style.zIndex = 400;
+    cp.style.pointerEvents = "auto";   // ← optional but safe
 
     map.getPane("tooltipPane").style.zIndex = 1200;
     map.getPane("popupPane").style.zIndex = 1200;
@@ -456,19 +460,22 @@
 
           // Tooltip: only show for points when choropleth is OFF (geo = "none")
           layer.unbindTooltip();
+          
           if (geoSel.value === "none") {
             const tipDesc = (desc || "").trim();
             const tipAddr = (addr || "").trim();
             const mid = [tipDesc, tipAddr].filter(Boolean).join("<br/>");
-
+          
             layer.bindTooltip(
               `<strong>${status}</strong>${mid ? "<br/>" + mid : ""}<br/>Created: ${created}<br/>Resolved: ${resolved}`,
-              { sticky: true, direction: "top", opacity: 0.95 }
+              { sticky: true, direction: "top", opacity: 0.95, pane: "tooltipPane" }
             );
+          
+            layer.on("mouseover", () => layer.openTooltip());
+            layer.on("mouseout",  () => layer.closeTooltip());
+          } else {
+            if (layer.closeTooltip) layer.closeTooltip();
           }
-        }
-      }).addTo(map);
-    }
 
     function updateLegend(metric, min, max) {
       document.getElementById("legendMetric").textContent = metricLabel(metric);
