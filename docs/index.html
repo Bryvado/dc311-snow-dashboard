@@ -477,7 +477,7 @@
             if (layer.closeTooltip) layer.closeTooltip();
           }
         }  // ← ADD: closes onEachFeature callback
-      });  // ← ADD: closes L.geoJSON options object
+      }).addTo(map);  // ← ADD .addTo(map) here
     }      // ← This existing brace now correctly closes updatePointLayer
 
     function updateLegend(metric, min, max) {
