@@ -1,8 +1,8 @@
 {
   "ok": true,
-  "last_refresh_utc": "2026-02-14T14:02:05.846270+00:00",
+  "last_refresh_utc": "2026-02-14T14:33:16.350763+00:00",
   "layer_url": "https://maps2.dcgis.dc.gov/dcgis/rest/services/DCGIS_APPS/SR_30days_Open/MapServer/17",
-  "records": 10031,
+  "records": 10034,
   "generated_files": [
     "points.geojson",
     "metrics_ward.json",
